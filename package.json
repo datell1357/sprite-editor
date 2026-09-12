@@ -1,0 +1,27 @@
+{
+  "name": "sprite-editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5186 --strictPort",
+    "api": ".venv/bin/python -m server.app",
+    "build": "tsc -b && vite build --emptyOutDir false",
+    "preview": "vite preview --host 127.0.0.1 --port 4186 --strictPort",
+    "test": "vitest run",
+    "test:api": ".venv/bin/python -m unittest discover -s server -p 'test_*.py' -v"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.5",
+    "vitest": "^4.1.11"
+  }
+}
