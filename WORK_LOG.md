@@ -62,6 +62,11 @@ Sprite Fusion의 캔버스 중심 UX를 참고해 sprite-gen 생성, Pixel Snapp
   프런트엔드 23개/Python 40개 및 빌드 통과. HTTP 검사에는 loopback 바인딩 허용 필요.
 - 다음: 실제 provider 품질 검증(기존 실행 허가 질문은 답변 대기), 다중 상태 생성과
   미완성 raw-only run 복구 등 남은 확장 범위 검토. 실제 생성은 자동으로 실행하지 않는다.
+- 아틀라스 자체 왕복 수정: 타임라인의 기존 sprite-atlas.json 형식을 가져오기에서 지원.
+  초→ms, 프레임 순서/loop/variant 보존, baked offset 재적용 없음. 기존 sprite-gen 형식 유지.
+  브라우저 실제 export 3프레임을 별도 임시 저장소로 복원해 RGBA/125ms/loop 동일 확인.
+  불균등 시간·부분 마지막 행·잘못된 좌표/시간/variant 회귀 검사 포함 Python43,
+  프런트23 및 빌드 통과. 파일 선택 자동화는 반복하지 않았고 안내 UI/오류 로그 확인.
 - 작업 수명 보강 완료: 취소 시 bounded process-group 종료, queued 취소의 실행 방지,
   정상 서버 종료 시 정리, 중복 포트 실행의 기존 job 상태 보존, 요청 형식/프롬프트 정규화.
 - 이전 HEAD 재현: SIGTERM 무시 provider 취소 후 다음 작업은 queued에 남았다.

@@ -16,10 +16,43 @@ def positive_number(value, label, upper=60000):
     return value
 
 
+def normalize_manifest(manifest):
+    """Accept the editor's existing atlas export without changing its pixels."""
+    if 'frame_layout' in manifest or 'animation' in manifest:
+        return manifest, None
+    if type(manifest.get('version')) is not int or manifest['version'] != 1 or not isinstance(manifest.get('frames'), list):
+        raise ValueError('sprite-gen manifest 또는 Sprite Editor 아틀라스 JSON이 필요합니다.')
+    name = manifest.get('name')
+    if not isinstance(name, str) or not name.strip() or len(name) > 120:
+        raise ValueError('클립 이름은 1~120자여야 합니다.')
+    frames = manifest['frames']
+    if not 1 <= len(frames) <= 256:
+        raise ValueError('아틀라스에는 1~256프레임이 필요합니다.')
+    variant = manifest.get('variant')
+    if variant is not None and variant not in ('plain', 'pixel-unfake'):
+        raise ValueError('지원하지 않는 픽셀 처리 종류입니다.')
+    rects, durations = [], []
+    for frame in frames:
+        if not isinstance(frame, dict) or any(type(frame.get(k)) is not int for k in ('x', 'y', 'w', 'h')):
+            raise ValueError('프레임 좌표는 정수여야 합니다.')
+        rects.append({k: frame[k] for k in ('x', 'y', 'w', 'h')})
+        durations.append(positive_number(frame.get('duration'), '프레임 시간(초)', 60) * 1000)
+    # The last row may be partially empty. Sheet dimensions are taken from the
+    # PNG below, then all rectangles pass the same bounds and pixel-budget gate.
+    return {
+        'characterId': 'Sprite Editor',
+        'frame_layout': {'rows': {name: rects}},
+        'animation': {'rows': {name: {'frames': len(rects), 'fps': manifest.get('fps'),
+                                    'loop': manifest.get('loop'), 'durations_ms': durations}}},
+    }, variant
+
+
 def parse_atlas(payload):
     manifest = payload.get("manifest")
     if not isinstance(manifest, dict):
         raise ValueError("sprite-gen manifest.json이 필요합니다.")
+    editor_export = 'frame_layout' not in manifest and 'animation' not in manifest
+    manifest, variant = normalize_manifest(manifest)
     layout = manifest.get("frame_layout")
     animation = manifest.get("animation")
     if not isinstance(layout, dict) or not isinstance(animation, dict):
@@ -39,7 +72,7 @@ def parse_atlas(payload):
         with Image.open(io.BytesIO(data)) as image:
             if image.format != "PNG" or max(image.size) > 8192 or image.width * image.height > 16_777_216:
                 raise ValueError("PNG 시트는 최대 8192px, 총 16메가픽셀 이하여야 합니다.")
-            if image.size != (layout.get("sheetWidth"), layout.get("sheetHeight")):
+            if not editor_export and image.size != (layout.get("sheetWidth"), layout.get("sheetHeight")):
                 raise ValueError("선택한 PNG 크기가 manifest의 시트 크기와 다릅니다.")
             image.load()
             sheet = image.convert("RGBA")
@@ -93,9 +126,11 @@ def parse_atlas(payload):
             x, y, w, h = (rect[k] for k in ("x", "y", "w", "h"))
             image = sheet.crop((x, y, x + w, y + h))
             assets.append((image, {"id": asset_id, "name": f"{character} · {state} · {index + 1:02d}"[:120],
-                                  "source": {"kind": "sprite-gen", "state": state, "index": index, "sheetSha256": digest, "rect": {"x": x, "y": y, "w": w, "h": h}}}))
+                                  **({'processing': variant} if variant else {}),
+                                  "source": {"kind": "sprite-editor" if editor_export else "sprite-gen", "state": state, "index": index, "sheetSha256": digest, "rect": {"x": x, "y": y, "w": w, "h": h}}}))
             frames.append({"assetId": asset_id, "durationMs": durations[index]})
-        clips.append({"id": str(uuid.uuid4()), "name": state, "frames": frames, "fps": fps, "loop": loop})
+        clips.append({"id": str(uuid.uuid4()), "name": state, "frames": frames, "fps": fps, "loop": loop,
+                      **({'variant': variant} if variant else {})})
     return assets, clips
 
 

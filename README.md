@@ -122,6 +122,11 @@ ASCII 경로 별칭을 사용하세요. Python 서비스는 완성된 바이너�
 
 ## sprite-gen 아틀라스 가져오기
 
+타임라인에서 내보낸 `sprite-atlas.json`과 `sprite-atlas.png`도 같은 창에서
+다시 가져올 수 있습니다. 프레임 순서·개별 시간·반복·plain/Pixel Unfake 표시를 복원합니다.
+시트에 이미 반영된 정렬 여백은 그대로 유지합니다. 후보 목록과 원본 자산의 버전 관계는
+아틀라스에 포함되지 않으므로 전체 작업을 옮길 때는 **Export project**를 사용하세요.
+
 Sprite 화면의 **sprite-gen 가져오기**에서 완성된 작업의 `manifest.json`과
 `sprite-sheet-alpha.png`를 선택합니다. `frame_layout.rows`의 실제 사각형으로 프레임을
 추출하고 `animation.rows`의 상태 이름·`durations_ms`·FPS·loop를 보존합니다.

@@ -1,4 +1,5 @@
 import base64
+import copy
 import io
 import tempfile
 import unittest
@@ -26,6 +27,58 @@ class AtlasTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
         self.store = Store(Path(temp.name))
+
+    def editor_export(self):
+        payload = fixture()
+        payload['manifest'] = {
+            'version': 1, 'image': 'sprite-atlas.png', 'name': 'up_attack',
+            'fps': 8, 'loop': False, 'variant': 'plain',
+            'frames': [
+                {'x': 0, 'y': 0, 'w': 4, 'h': 4, 'offsetX': 1, 'offsetY': 0, 'duration': .125, 'assetId': 'old-a'},
+                {'x': 4, 'y': 0, 'w': 4, 'h': 4, 'offsetX': 0, 'offsetY': 1, 'duration': .375, 'assetId': 'old-b'},
+            ],
+        }
+        return payload
+
+    def test_editor_export_restores_pixels_variable_timing_and_variant(self):
+        payload = self.editor_export(); original = copy.deepcopy(payload)
+        result = import_atlas(self.store, payload)
+        self.assertEqual(payload, original)
+        clip = result['clips'][0]
+        self.assertEqual((clip['name'], clip['fps'], clip['loop'], clip['variant']), ('up_attack', 8, False, 'plain'))
+        self.assertEqual([f['durationMs'] for f in clip['frames']], [125, 375])
+        for asset, pixel in zip(result['assets'], [(20,120,50,128), (250,20,70,255)]):
+            self.assertEqual(asset['processing'], 'plain')
+            self.assertEqual(asset['source']['kind'], 'sprite-editor')
+            self.assertIsNone(asset['parentId'])
+            with Image.open(self.store.image_path(asset['id'])) as image:
+                # Offsets describe placement already baked into the sheet;
+                # import must not apply them a second time.
+                self.assertEqual(image.size, (4,4))
+                self.assertEqual(image.getpixel((0,0)), pixel)
+
+    def test_editor_export_rejects_bad_time_bounds_and_variant_before_publication(self):
+        for edit in [lambda m: m.update(version=True), lambda m: m.update(variant='unknown'),
+                     lambda m: m.update(frames=[]), lambda m: m.update(loop='false'),
+                     lambda m: m['frames'][1].update(duration=True),
+                     lambda m: m['frames'][1].update(duration=61),
+                     lambda m: m['frames'][1].update(duration=float('nan')),
+                     lambda m: m['frames'][1].update(x=8)]:
+            payload = self.editor_export(); edit(payload['manifest'])
+            with self.assertRaises(ValueError): import_atlas(self.store, payload)
+            self.assertEqual(self.store.list('assets'), [])
+
+    def test_editor_export_with_partial_last_grid_row_keeps_baked_cell_order(self):
+        payload = self.editor_export()
+        buf = io.BytesIO(); image = Image.new('RGBA', (8,8))
+        for color, box in [((1,2,3,255),(0,0,4,4)), ((4,5,6,128),(4,0,8,4)), ((7,8,9,255),(0,4,4,8))]:
+            image.paste(color, box)
+        image.save(buf, 'PNG')
+        payload['png'] = 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode()
+        payload['manifest']['frames'].append({'x':0,'y':4,'w':4,'h':4,'duration':.2})
+        images, clips = parse_atlas(payload)
+        self.assertEqual([im.getpixel((0,0)) for im,_ in images], [(1,2,3,255),(4,5,6,128),(7,8,9,255)])
+        self.assertEqual([f['durationMs'] for f in clips[0]['frames']], [125,375,200])
 
     def test_pixels_alpha_and_per_frame_timing_survive(self):
         result = import_atlas(self.store, fixture())

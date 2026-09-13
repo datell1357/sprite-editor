@@ -45,10 +45,12 @@ export function AtlasImport({
       if (manifest.size > 2 * 1024 * 1024 || sheet.size > 12 * 1024 * 1024)
         throw new Error("manifest는 2MB, PNG는 12MB 이하여야 합니다.");
       const data = JSON.parse(await manifest.text());
-      if (
-        !data.frame_layout?.rows ||
-        Object.keys(data.frame_layout.rows).length > remainingClips
-      )
+      const clipCount = data?.frame_layout?.rows
+        ? Object.keys(data.frame_layout.rows).length
+        : data?.version === 1 && Array.isArray(data.frames)
+          ? 1
+          : 0;
+      if (!clipCount || clipCount > remainingClips)
         throw new Error(
           "클립 수 제한(64개)을 초과했거나 manifest 형식이 다릅니다.",
         );
@@ -128,8 +130,13 @@ export function AtlasImport({
             <strong>sprite-sheet-alpha.png</strong>를 선택하세요. 상태별 클립,
             프레임 순서, 재생 시간이 함께 복원됩니다.
           </p>
+          <p className="hint">
+            타임라인에서 내보낸 sprite-atlas.json과 sprite-atlas.png도 다시
+            가져올 수 있습니다. 후보 목록과 원본 버전 관계까지 옮기려면 프로젝트
+            내보내기를 사용하세요.
+          </p>
           <label>
-            런타임 manifest
+            아틀라스 JSON
             <input
               aria-label="sprite-gen manifest"
               type="file"
