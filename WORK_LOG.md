@@ -49,7 +49,12 @@ Sprite Fusion의 캔버스 중심 UX를 참고해 sprite-gen 생성, Pixel Snapp
   경로/중복/링크/압축/파일수/메모리/후보 누락 검증 후 자산+완료 작업을 DB transaction으로 게시.
   실제 run ZIP API 검사: 재생3/후보3/총6자산, 다운로드 ZIP 바이트 동일.
   브라우저 완료 작업 채택과 중복 방지, 후보 표시 통과. 파일 선택 자동화는 반복하지 않았다.
-- 다음: 방향 앵커/다방향 생성 연결, 실제 provider 품질 검증.
+- 방향 기준 생성 연결 완료: 정면/후면/좌/우/대각선 1~8개, 방향별 idle 1프레임, 미러 대체 없음.
+  공용 deadline의 workflow/prepare/gen-set/extract/compose/inspect 후 요청 방향/셀/수/QA/빈 이미지 검사.
+  결과를 원본 parent에 연결하고 작업 내역에서 기준 선택→애니메이션 모드로 이동.
+  실제 prepare에서 8방향 모두 base-source 참조 확인. Python35/프런트23 및 빌드 통과.
+  방향의 시각적 정확도는 실제 provider 호출 없이 검증할 수 없으며 미실행 상태를 유지.
+- 다음: 확인된 방향 기준의 애니메이션 일괄 실행, 실제 provider 품질 검증.
 - 작업 수명 보강 완료: 취소 시 bounded process-group 종료, queued 취소의 실행 방지,
   정상 서버 종료 시 정리, 중복 포트 실행의 기존 job 상태 보존, 요청 형식/프롬프트 정규화.
 - 이전 HEAD 재현: SIGTERM 무시 provider 취소 후 다음 작업은 queued에 남았다.

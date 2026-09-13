@@ -151,8 +151,9 @@ export default function App() {
         "저장하지 않은 픽셀 수정이 있습니다. 저장하지 않고 이동할까요?",
       )
     )
-      return;
+      return false;
     setSelected(id);
+    return true;
   }
   function changeMode(next: "sprite" | "map") {
     if (
@@ -466,6 +467,7 @@ export default function App() {
             color={color}
             onColor={setColor}
             onJob={refresh}
+            onChooseAnchor={select}
             onUseClips={async (clips) => {
               await refresh();
               const next = adoptClips(latestProject.current, clips);

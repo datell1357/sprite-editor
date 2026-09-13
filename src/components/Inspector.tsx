@@ -23,6 +23,16 @@ const palette = [
   "#bd6481",
   "#8b78ac",
 ];
+const directionLabels: Record<string, string> = {
+  down: "정면",
+  right: "오른쪽",
+  up: "후면",
+  left: "왼쪽",
+  down45_right: "정면 오른쪽 45°",
+  up45_right: "후면 오른쪽 45°",
+  up45_left: "후면 왼쪽 45°",
+  down45_left: "정면 왼쪽 45°",
+};
 export function Inspector({
   selected,
   capabilities,
@@ -32,6 +42,7 @@ export function Inspector({
   onJob,
   onError,
   onUseClips,
+  onChooseAnchor,
 }: {
   selected?: Asset;
   capabilities: Capabilities | null;
@@ -41,17 +52,21 @@ export function Inspector({
   onJob: () => void;
   onError: (s: string) => void;
   onUseClips: (clips: AnimationClip[]) => Promise<void>;
+  onChooseAnchor: (id: string) => boolean;
 }) {
   const [prompt, setPrompt] = useState(""),
     [provider, setProvider] = useState("codex"),
     [size, setSize] = useState(32),
     [reference, setReference] = useState(false);
-  const [mode, setMode] = useState<"generate" | "animate">("generate"),
+  const [mode, setMode] = useState<"generate" | "animate" | "directions">(
+      "generate",
+    ),
     [state, setState] = useState("walk"),
     [frames, setFrames] = useState(4),
     [fps, setFps] = useState(8),
     [loop, setLoop] = useState(true),
     [accessConfirmed, setAccessConfirmed] = useState(false);
+  const [directions, setDirections] = useState(["down", "right", "up", "left"]);
   const [colors, setColors] = useState(16),
     [pitch, setPitch] = useState(""),
     [busy, setBusy] = useState(false);
@@ -85,6 +100,12 @@ export function Inspector({
           >
             애니메이션
           </button>
+          <button
+            className={mode === "directions" ? "active" : ""}
+            onClick={() => setMode("directions")}
+          >
+            방향 기준
+          </button>
         </div>
         <textarea
           aria-label="생성 프롬프트"
@@ -97,8 +118,8 @@ export function Inspector({
           Provider
           <select
             aria-label="생성 제공자"
-            disabled={mode === "animate"}
-            value={mode === "animate" ? "codex" : provider}
+            disabled={mode !== "generate"}
+            value={mode !== "generate" ? "codex" : provider}
             onChange={(e) => setProvider(e.target.value)}
           >
             <option value="codex">GPT · Codex</option>
@@ -118,56 +139,87 @@ export function Inspector({
             ))}
           </select>
         </label>
-        {mode === "animate" ? (
+        {mode !== "generate" ? (
           <>
             <p className="hint">
               저장된 기준 자산: {selected?.name || "라이브러리에서 선택하세요"}.
-              방향은 기준 이미지를 유지합니다.
+              {mode === "animate"
+                ? "방향은 기준 이미지를 유지합니다."
+                : "방향별 기준 이미지를 만든 뒤 직접 확인하고 선택하세요."}
             </p>
-            <label className="field">
-              동작 상태
-              <select
-                aria-label="동작 상태"
-                value={state}
-                onChange={(e) => setState(e.target.value)}
-              >
-                {["idle", "walk", "run", "attack", "jump"].map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              프레임 수
-              <input
-                aria-label="생성 프레임 수"
-                type="number"
-                min={2}
-                max={16}
-                value={frames}
-                onChange={(e) => setFrames(Number(e.target.value))}
-              />
-            </label>
-            <label className="field">
-              FPS
-              <input
-                aria-label="생성 FPS"
-                type="number"
-                min={1}
-                max={60}
-                value={fps}
-                onChange={(e) => setFps(Number(e.target.value))}
-              />
-            </label>
-            <label className="check-field">
-              <input
-                type="checkbox"
-                checked={loop}
-                onChange={(e) => setLoop(e.target.checked)}
-              />
-              반복 애니메이션 생성
-            </label>
+            {mode === "directions" ? (
+              <>
+                <div className="direction-options">
+                  {Object.entries(directionLabels).map(([id, label]) => (
+                    <label className="check-field" key={id}>
+                      <input
+                        type="checkbox"
+                        checked={directions.includes(id)}
+                        onChange={(e) =>
+                          setDirections(
+                            e.target.checked
+                              ? [...directions, id]
+                              : directions.filter((d) => d !== id),
+                          )
+                        }
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                <p className="hint">
+                  {directions.length}개 방향을 각각 생성합니다. 선택한 방향마다
+                  생성 요청과 계정 사용량이 발생합니다.
+                </p>
+              </>
+            ) : (
+              <>
+                <label className="field">
+                  동작 상태
+                  <select
+                    aria-label="동작 상태"
+                    value={state}
+                    onChange={(e) => setState(e.target.value)}
+                  >
+                    {["idle", "walk", "run", "attack", "jump"].map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  프레임 수
+                  <input
+                    aria-label="생성 프레임 수"
+                    type="number"
+                    min={2}
+                    max={16}
+                    value={frames}
+                    onChange={(e) => setFrames(Number(e.target.value))}
+                  />
+                </label>
+                <label className="field">
+                  FPS
+                  <input
+                    aria-label="생성 FPS"
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={fps}
+                    onChange={(e) => setFps(Number(e.target.value))}
+                  />
+                </label>
+                <label className="check-field">
+                  <input
+                    type="checkbox"
+                    checked={loop}
+                    onChange={(e) => setLoop(e.target.checked)}
+                  />
+                  반복 애니메이션 생성
+                </label>
+              </>
+            )}
             <label className="check-field">
               <input
                 type="checkbox"
@@ -194,6 +246,8 @@ export function Inspector({
             busy ||
             !prompt.trim() ||
             !capabilities?.spriteGen ||
+            (mode === "directions" &&
+              (!selected || !accessConfirmed || !directions.length)) ||
             (mode === "animate" &&
               (!selected ||
                 !accessConfirmed ||
@@ -206,28 +260,40 @@ export function Inspector({
           }
           onClick={() =>
             perform(() =>
-              mode === "animate"
-                ? api.animate({
+              mode === "directions"
+                ? api.directions({
                     prompt,
                     size,
                     referenceId: selected!.id,
-                    state,
-                    frames,
-                    fps,
-                    loop,
+                    directions,
                     accessConfirmed,
                   })
-                : api.generate(
-                    prompt,
-                    provider,
-                    size,
-                    reference ? selected?.id : undefined,
-                  ),
+                : mode === "animate"
+                  ? api.animate({
+                      prompt,
+                      size,
+                      referenceId: selected!.id,
+                      state,
+                      frames,
+                      fps,
+                      loop,
+                      accessConfirmed,
+                    })
+                  : api.generate(
+                      prompt,
+                      provider,
+                      size,
+                      reference ? selected?.id : undefined,
+                    ),
             )
           }
         >
           <Sparkles size={17} />
-          {mode === "animate" ? "Animate" : "Generate"}
+          {mode === "directions"
+            ? "방향 기준 생성"
+            : mode === "animate"
+              ? "Animate"
+              : "Generate"}
         </button>
         <p className="hint">
           연결된 계정으로 실행합니다. 제공자의 이용 한도·요금이 적용되며, 실제
@@ -403,6 +469,27 @@ export function Inspector({
               <a href={job.archiveUrl} download>
                 가져온 원본 ZIP 받기
               </a>
+            )}
+            {job.status === "completed" && job.directionAnchors && (
+              <div className="anchor-results">
+                <p className="hint">
+                  방향과 비대칭 장식을 확인한 뒤 기준을 선택하세요.
+                </p>
+                {job.directionAnchors.map((anchor) => (
+                  <button
+                    key={anchor.direction}
+                    onClick={() => {
+                      if (onChooseAnchor(anchor.assetId)) {
+                        setMode("animate");
+                      }
+                    }}
+                  >
+                    <img src={`/api/assets/${anchor.assetId}/image`} alt="" />
+                    {directionLabels[anchor.direction] || anchor.direction} 기준
+                    선택
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         ))}

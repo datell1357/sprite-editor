@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .store import now
 from .animation import validate_animation, animation_plan, animation_output, publish_animation_variants
+from .directions import validate_directions,direction_plan,publish_directions
 
 JOB_TIMEOUT_SECONDS = 1200
 TERMINATION_GRACE_SECONDS = 5
@@ -94,15 +95,17 @@ class Jobs:
         if not isinstance(payload, dict):
             raise ValueError("작업 요청은 JSON 객체여야 합니다.")
         kind = payload.get("kind")
-        if not isinstance(kind, str) or kind not in {"generate", "snap", "animate"}:
+        if not isinstance(kind, str) or kind not in {"generate", "snap", "animate", "directions"}:
             raise ValueError("지원하지 않는 작업입니다.")
         allowed = {"kind", "prompt", "provider", "size", "referenceId"} if kind == "generate" else {"kind", "assetId", "colors", "pixelSize"}
         if kind == "animate":
             allowed = {"kind", "prompt", "provider", "size", "referenceId", "state", "frames", "fps", "loop", "accessConfirmed"}
+        if kind == 'directions':
+            allowed={'kind','prompt','provider','size','referenceId','directions','accessConfirmed'}
         if set(payload) - allowed:
             raise ValueError("지원하지 않는 작업 설정입니다.")
         payload = dict(payload)
-        if kind in {"generate", "animate"}:
+        if kind in {"generate", "animate", "directions"}:
             if not find_sprite_gen():
                 raise ValueError("sprite-gen을 설치하거나 SPRITE_GEN_BIN을 설정해 주세요.")
             prompt = payload.get("prompt")
@@ -119,6 +122,8 @@ class Jobs:
                 self.store.get("assets", payload["referenceId"])
             if kind == "animate":
                 validate_animation(payload, self.store)
+            if kind == 'directions':
+                validate_directions(payload,self.store)
         else:
             if not find_snapper():
                 raise ValueError("Pixel Snapper를 먼저 빌드해 주세요.")
@@ -184,6 +189,15 @@ class Jobs:
             folder = self.store.root / "jobs" / job_id
             folder.mkdir()
             deadline = time.monotonic() + JOB_TIMEOUT_SECONDS
+            if payload['kind']=='directions':
+                for stage,command in direction_plan(find_sprite_gen(),payload,self.store.image_path(payload['referenceId']),folder):
+                    if not self.run_command(job_id,command,stage,deadline):return
+                with self.lock:
+                    current=self.store.get('jobs',job_id)
+                    if current['status']=='cancelled':return
+                    result=publish_directions(self.store,folder,payload)
+                    self.store.put('jobs',{**current,**result,'status':'completed','reviewRequired':True,'finishedAt':now()})
+                return
             if payload["kind"] == "animate":
                 for stage, command in animation_plan(find_sprite_gen(), payload, self.store.image_path(payload["referenceId"]), folder):
                     if not self.run_command(job_id, command, stage, deadline):

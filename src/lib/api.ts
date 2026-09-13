@@ -17,6 +17,18 @@ async function request<T>(url: string, data?: unknown): Promise<T> {
   return payload as T;
 }
 export const api = {
+  directions: (input: {
+    prompt: string;
+    size: number;
+    referenceId: string;
+    directions: string[];
+    accessConfirmed: boolean;
+  }) =>
+    request<Job>("/api/jobs", {
+      kind: "directions",
+      provider: "codex",
+      ...input,
+    }),
   importRun: (archive: string, maxClips: number) =>
     request<{ assets: Asset[]; clips: AnimationClip[]; archiveUrl: string }>(
       "/api/import-run",
