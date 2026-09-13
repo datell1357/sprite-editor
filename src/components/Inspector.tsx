@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import type { AnimationClip, Asset, Capabilities, Job } from "../types";
 import { api } from "../lib/api";
+import { directionLabels } from "../lib/directions";
+import { BatchAnimation } from "./BatchAnimation";
 
 const palette = [
   "#202126",
@@ -23,17 +25,8 @@ const palette = [
   "#bd6481",
   "#8b78ac",
 ];
-const directionLabels: Record<string, string> = {
-  down: "정면",
-  right: "오른쪽",
-  up: "후면",
-  left: "왼쪽",
-  down45_right: "정면 오른쪽 45°",
-  up45_right: "후면 오른쪽 45°",
-  up45_left: "후면 왼쪽 45°",
-  down45_left: "정면 왼쪽 45°",
-};
 export function Inspector({
+  assets,
   selected,
   capabilities,
   jobs,
@@ -44,6 +37,7 @@ export function Inspector({
   onUseClips,
   onChooseAnchor,
 }: {
+  assets: Asset[];
   selected?: Asset;
   capabilities: Capabilities | null;
   jobs: Job[];
@@ -67,6 +61,9 @@ export function Inspector({
     [loop, setLoop] = useState(true),
     [accessConfirmed, setAccessConfirmed] = useState(false);
   const [directions, setDirections] = useState(["down", "right", "up", "left"]);
+  const [batchAnchors, setBatchAnchors] = useState<
+    { direction: string; assetId: string }[] | null
+  >(null);
   const [colors, setColors] = useState(16),
     [pitch, setPitch] = useState(""),
     [busy, setBusy] = useState(false);
@@ -295,6 +292,15 @@ export function Inspector({
               ? "Animate"
               : "Generate"}
         </button>
+        {mode === "animate" && (
+          <button
+            className="wide"
+            disabled={busy || !assets.length || !capabilities?.spriteGen}
+            onClick={() => setBatchAnchors([])}
+          >
+            여러 방향 모션 생성
+          </button>
+        )}
         <p className="hint">
           연결된 계정으로 실행합니다. 제공자의 이용 한도·요금이 적용되며, 실제
           크기는 결과에서 확인하세요.
@@ -407,6 +413,8 @@ export function Inspector({
                 <X size={15} />
               )}
               <span>
+                {job.direction &&
+                  `${directionLabels[job.direction] || job.direction} · `}
                 {job.request.kind === "snap"
                   ? "픽셀 정리"
                   : job.request.prompt?.slice(0, 24)}
@@ -489,11 +497,30 @@ export function Inspector({
                     선택
                   </button>
                 ))}
+                <button
+                  disabled={busy || !capabilities?.spriteGen}
+                  onClick={() => setBatchAnchors(job.directionAnchors!)}
+                >
+                  이 기준들로 여러 방향 모션 생성
+                </button>
               </div>
             )}
           </div>
         ))}
       </section>
+      {batchAnchors && (
+        <BatchAnimation
+          assets={assets}
+          anchors={batchAnchors}
+          defaults={{ prompt, size, state, frames, fps, loop, accessConfirmed }}
+          onClose={() => setBatchAnchors(null)}
+          onSubmit={(confirmed) => {
+            setAccessConfirmed(confirmed);
+            setBatchAnchors(null);
+            onJob();
+          }}
+        />
+      )}
     </aside>
   );
 }

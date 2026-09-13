@@ -17,6 +17,16 @@ async function request<T>(url: string, data?: unknown): Promise<T> {
   return payload as T;
 }
 export const api = {
+  batchAnimate: (input: {
+    anchors: { direction: string; assetId: string }[];
+    prompt: string;
+    size: number;
+    state: string;
+    frames: number;
+    fps: number;
+    loop: boolean;
+    accessConfirmed: boolean;
+  }) => request<{ jobs: Job[] }>("/api/jobs/batch-animation", input),
   directions: (input: {
     prompt: string;
     size: number;

@@ -1,6 +1,7 @@
 """One local worker. Never run client-supplied commands or overwrite input assets."""
 from __future__ import annotations
 
+import json
 import os
 import queue
 import shutil
@@ -13,7 +14,7 @@ from pathlib import Path
 
 from .store import now
 from .animation import validate_animation, animation_plan, animation_output, publish_animation_variants
-from .directions import validate_directions,direction_plan,publish_directions
+from .directions import FACING,validate_directions,direction_plan,publish_directions
 
 JOB_TIMEOUT_SECONDS = 1200
 TERMINATION_GRACE_SECONDS = 5
@@ -91,7 +92,7 @@ class Jobs:
         self.thread = threading.Thread(target=self.worker, daemon=True)
         self.thread.start()
 
-    def submit(self, payload):
+    def validate_request(self, payload):
         if not isinstance(payload, dict):
             raise ValueError("작업 요청은 JSON 객체여야 합니다.")
         kind = payload.get("kind")
@@ -135,15 +136,49 @@ class Jobs:
             pitch = payload.get("pixelSize")
             if pitch is not None and (type(pitch) not in {int, float} or not 1 <= pitch <= 1024):
                 raise ValueError("픽셀 간격은 1~1024이어야 합니다.")
+        return payload
+
+    def submit(self, payload):
+        return self.enqueue([self.validate_request(payload)])[0]
+
+    def enqueue(self, requests, directions=None):
         with self.lock:
             if self.stopping:
                 raise ValueError("서비스를 종료하고 있습니다. 잠시 후 다시 실행해 주세요.")
-            if sum(j["status"] in {"queued", "running"} for j in self.store.list("jobs")) >= 8:
+            active = sum(j["status"] in {"queued", "running"} for j in self.store.list("jobs"))
+            if active + len(requests) > 8:
                 raise ValueError("대기 작업이 많습니다. 완료 후 다시 실행해 주세요.")
-            job = {"id": str(uuid.uuid4()), "status": "queued", "createdAt": now(), "request": payload}
-            self.store.put("jobs", job)
-            self.queue.put(job["id"])
-        return job
+            batch_id = str(uuid.uuid4()) if directions is not None else None
+            jobs = []
+            for index, request in enumerate(requests):
+                job = {"id": str(uuid.uuid4()), "status": "queued", "createdAt": now(), "request": request}
+                if directions is not None:
+                    job.update(batchId=batch_id, direction=directions[index])
+                jobs.append(job)
+            # Admit every job in one transaction before the worker can see any.
+            with self.store.connect() as db:
+                db.executemany('INSERT INTO jobs VALUES (?,?)', [(job['id'], json.dumps(job)) for job in jobs])
+            for job in jobs:
+                self.queue.put(job['id'])
+        return jobs
+
+    def submit_batch(self, payload):
+        allowed = {'anchors', 'prompt', 'state', 'size', 'frames', 'fps', 'loop', 'accessConfirmed'}
+        if not isinstance(payload, dict) or set(payload) - allowed:
+            raise ValueError('일괄 생성 설정이 올바르지 않습니다.')
+        anchors = payload.get('anchors')
+        if not isinstance(anchors, list) or not 1 <= len(anchors) <= 8:
+            raise ValueError('확인한 방향 기준을 1~8개 선택해 주세요.')
+        if any(not isinstance(a, dict) or set(a) != {'direction', 'assetId'} or
+               not isinstance(a['direction'], str) or a['direction'] not in FACING for a in anchors):
+            raise ValueError('방향 기준의 형식이 올바르지 않습니다.')
+        directions = [a['direction'] for a in anchors]
+        if len(set(directions)) != len(directions):
+            raise ValueError('방향 기준이 중복됩니다.')
+        common = {k: v for k, v in payload.items() if k != 'anchors'}
+        requests = [self.validate_request({**common, 'kind': 'animate', 'provider': 'codex',
+                                          'referenceId': a['assetId']}) for a in anchors]
+        return self.enqueue(requests, directions)
 
     def cancel(self, job_id):
         with self.lock:
@@ -208,6 +243,9 @@ class Jobs:
                     if current["status"] == "cancelled":
                         return
                     result = publish_animation_variants(self.store, folder, payload, output_payload)
+                    if current.get('direction'):
+                        for clip in result['clips']:
+                            clip['name'] = current['direction'] + '_' + clip['name']
                     self.store.put("jobs", {**current, "status": "completed", "clips": result["clips"],
                         "assetIds": [a["id"] for a in result["assets"]], "reviewRequired": True, "finishedAt": now()})
                 return

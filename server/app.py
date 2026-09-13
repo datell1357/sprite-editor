@@ -71,6 +71,8 @@ def make_handler(store, jobs):
                     return self.respond(201,import_run(store,payload))
                 if self.path == "/api/jobs":
                     return self.respond(202, jobs.submit(payload))
+                if self.path == '/api/jobs/batch-animation':
+                    return self.respond(202,{'jobs':jobs.submit_batch(payload)})
                 match = re.fullmatch(r"/api/jobs/([a-f0-9-]{36})/cancel", self.path)
                 if match:
                     return self.respond(200, jobs.cancel(match[1]))

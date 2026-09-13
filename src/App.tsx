@@ -461,6 +461,7 @@ export default function App() {
         </div>
         {inspector && (
           <Inspector
+            assets={assets}
             selected={selected}
             capabilities={capabilities}
             jobs={jobs}

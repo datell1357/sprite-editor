@@ -18,6 +18,8 @@ export interface Job {
   reviewRequired?: boolean;
   archiveUrl?: string;
   directionAnchors?: { direction: string; assetId: string }[];
+  batchId?: string;
+  direction?: string;
   request: { kind: string; prompt?: string };
 }
 export interface Capabilities {
