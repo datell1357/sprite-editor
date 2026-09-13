@@ -37,8 +37,11 @@ Sprite Fusion의 캔버스 중심 UX를 참고해 sprite-gen 생성, Pixel Snapp
   plain 파일 누락·크기 불일치·frames 밖 경로는 실패하며 정규화 결과로 대체하지 않는다.
   Pixel Snapper/일반 수정본도 parent 비교 dialog로 선택 가능. processing/variant는 프로젝트 export/import 유지.
   실제 sprite-gen 3쌍(6자산)에서 parent·timing 일치, 원본 해시 불변 확인. 브라우저 원본 비교/선택 통과.
-- 다음: 방향 앵커/다방향 생성 연결,
-  autotile, raw/후보 pool import.
+- 오토타일 완료: 레이어별 기본 타일/3×3 있음·없음·무관 규칙, 순서 변경, 최대 32개 규칙.
+  raw 배치 보존, 이웃 편집 시 재계산, 화면/PNG 공용 resolver, 규칙/참조 자산 프로젝트 복원.
+  브라우저 규칙 생성·이웃 삭제·새 탭 복원 통과. PNG 768×512에서 삭제 칸/이웃/상단/내부 픽셀 일치.
+  프런트엔드 20개와 빌드 통과, 비교 작업의 Python 24개 통과. 편집 중 HMR 오류는 수정 후 새 탭에서 해소.
+- 다음: 방향 앵커/다방향 생성 연결, raw/후보 pool import, 실제 provider 품질 검증.
 - 작업 수명 보강 완료: 취소 시 bounded process-group 종료, queued 취소의 실행 방지,
   정상 서버 종료 시 정리, 중복 포트 실행의 기존 job 상태 보존, 요청 형식/프롬프트 정규화.
 - 이전 HEAD 재현: SIGTERM 무시 provider 취소 후 다음 작업은 queued에 남았다.

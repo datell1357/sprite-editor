@@ -1170,3 +1170,69 @@ canvas {
     max-height: 180px;
   }
 }
+
+.autotile-dialog {
+  color: var(--ink);
+  width: 540px;
+  max-width: calc(100vw - 24px);
+  max-height: 90dvh;
+  overflow: auto;
+  padding: 22px;
+}
+.autotile-dialog::backdrop {
+  background: #000a;
+}
+.autotile-dialog select {
+  max-width: 280px;
+}
+.autotile-rules {
+  max-height: 350px;
+  overflow: auto;
+  margin-bottom: 12px;
+}
+.autotile-rule {
+  display: flex;
+  gap: 18px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.rule-pattern {
+  display: grid;
+  grid-template-columns: repeat(3, 34px);
+  gap: 3px;
+  flex-shrink: 0;
+}
+.rule-pattern button {
+  height: 32px;
+  padding: 2px;
+  font-size: 10px;
+}
+.rule-pattern .required {
+  background: #375b3c;
+  color: #c4efad;
+}
+.rule-pattern .absent {
+  background: #693a38;
+  color: #f8c4b6;
+}
+.rule-pattern button:disabled {
+  opacity: 0.7;
+}
+.rule-fields {
+  min-width: 0;
+  flex: 1;
+  font-size: 12px;
+}
+.rule-fields select {
+  display: block;
+  width: 100%;
+  margin: 7px 0 10px;
+}
+@media (max-width: 600px) {
+  .autotile-dialog {
+    padding: 16px;
+  }
+  .autotile-rule {
+    gap: 10px;
+  }
+}

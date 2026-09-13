@@ -23,6 +23,7 @@ import { AtlasImport } from "./components/AtlasImport";
 import { AssetComparison } from "./components/AssetComparison";
 import { MapEditor } from "./components/MapEditor";
 import { api, downloadJSON, pngData } from "./lib/api";
+import { requireTileDimensions } from "./lib/autotile";
 import {
   emptyProject,
   activeClip,
@@ -244,6 +245,7 @@ export default function App() {
         throw new Error("프로젝트는 64MB 이하여야 합니다.");
       const portable = validatePortable(JSON.parse(await file.text())),
         ids = new Map<string, string>();
+      const restoredAssets: Asset[] = [];
       for (const a of orderedAssets(portable.assets)) {
         const added = await api.import(
           a.name,
@@ -252,9 +254,12 @@ export default function App() {
           a.processing,
         );
         ids.set(a.id, added.id);
+        restoredAssets.push(added);
       }
+      const restored = remapProject(portable.project, ids);
+      requireTileDimensions(restored, restoredAssets);
       recovery.current = false;
-      setProject(remapProject(portable.project, ids));
+      setProject(restored);
       await refresh();
       setSelected(ids.values().next().value);
       dirty.current = false;

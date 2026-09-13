@@ -36,6 +36,16 @@ export interface Layer {
   name: string;
   visible: boolean;
   collider: boolean;
+  autotile?: AutotileConfig;
+}
+export interface AutotileRule {
+  id: string;
+  pattern: number[];
+  assetId: string;
+}
+export interface AutotileConfig {
+  defaultAssetId: string;
+  rules: AutotileRule[];
 }
 export interface Project {
   version: 2;

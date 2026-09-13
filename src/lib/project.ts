@@ -1,4 +1,9 @@
 import type { AnimationClip, Asset, PortableProject, Project } from "../types";
+import {
+  autotileAssets,
+  requireTileDimensions,
+  validAutotile,
+} from "./autotile";
 
 export const emptyProject = (): Project => ({
   version: 2,
@@ -77,6 +82,10 @@ export function validateProject(value: unknown): Project {
     throw new Error("레이어 정보가 올바르지 않습니다.");
   if (new Set(p.layers.map((l) => l.id)).size !== p.layers.length)
     throw new Error("레이어 ID가 중복됩니다.");
+  if (
+    p.layers.some((l) => l.autotile !== undefined && !validAutotile(l.autotile))
+  )
+    throw new Error("오토타일 규칙이 올바르지 않습니다.");
   if (
     !Array.isArray(p.placements) ||
     p.placements.length > 20000 ||
@@ -161,10 +170,12 @@ export function validatePortable(value: unknown): PortableProject {
     [
       ...project.clips.flatMap((c) => c.frames.map((f) => f.assetId)),
       ...project.placements.map((t) => t.assetId),
+      ...autotileAssets(project),
     ].some((id) => !ids.has(id))
   )
     throw new Error("프로젝트에서 참조한 자산이 누락됐습니다.");
   orderedAssets(p.assets);
+  requireTileDimensions(project, p.assets);
   return { ...p, project };
 }
 
@@ -196,6 +207,20 @@ export function remapProject(
 ): Project {
   return {
     ...project,
+    layers: project.layers.map((l) =>
+      l.autotile
+        ? {
+            ...l,
+            autotile: {
+              defaultAssetId: ids.get(l.autotile.defaultAssetId)!,
+              rules: l.autotile.rules.map((r) => ({
+                ...r,
+                assetId: ids.get(r.assetId)!,
+              })),
+            },
+          }
+        : l,
+    ),
     clips: project.clips.map((c) => ({
       ...c,
       frames: c.frames.map((f) => ({ ...f, assetId: ids.get(f.assetId)! })),
@@ -211,6 +236,7 @@ export function usedAssets(project: Project, assets: Asset[]) {
   const ids = new Set([
     ...project.clips.flatMap((c) => c.frames.map((f) => f.assetId)),
     ...project.placements.map((t) => t.assetId),
+    ...autotileAssets(project),
   ]);
   return assets.filter((a) => ids.has(a.id));
 }

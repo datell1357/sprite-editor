@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Pencil,
   PaintBucket,
@@ -11,10 +11,13 @@ import {
   Undo2,
   Redo2,
   Shield,
+  Settings2,
 } from "lucide-react";
 import type { Asset, Project } from "../types";
 import { download, loadImage } from "../lib/api";
 import { fillRegion, paintCell } from "../lib/map";
+import { resolveAutotiles, requireTileDimensions } from "../lib/autotile";
+import { AutotileEditor } from "./AutotileEditor";
 
 export function MapEditor({
   project,
@@ -44,6 +47,11 @@ export function MapEditor({
   const working = useRef(project),
     lastPublished = useRef(project),
     strokeRecorded = useRef(false);
+  const [ruleLayer, setRuleLayer] = useState<string>();
+  const resolved = useMemo(
+    () => resolveAutotiles(project),
+    [project.placements, project.layers],
+  );
   useLayoutEffect(() => {
     const last = lastPublished.current;
     if (
@@ -91,9 +99,7 @@ export function MapEditor({
     context.imageSmoothingEnabled = false;
     for (const layer of project.layers) {
       if (!layer.visible) continue;
-      for (const p of project.placements.filter(
-        (p) => p.layerId === layer.id,
-      )) {
+      for (const p of resolved.filter((p) => p.layerId === layer.id)) {
         const image = images.current.get(p.assetId);
         if (!image) continue;
         // Objects keep their native dimensions; tile coordinates anchor at bottom centre.
@@ -153,7 +159,7 @@ export function MapEditor({
       return;
     visited.current.add(`${x}:${y}`);
     if (tool === "select") {
-      const item = [...project.placements]
+      const item = [...resolved]
         .reverse()
         .find((p) => p.x === x && p.y === y && p.layerId === layerId);
       if (item) onSelect(item.assetId);
@@ -360,6 +366,14 @@ export function MapEditor({
             </button>
             <button className="layer-name" onClick={() => setLayer(l.id)}>
               {l.name}
+              {l.autotile ? " · Auto" : ""}
+            </button>
+            <button
+              aria-label={`${l.name} 오토타일 설정`}
+              title="오토타일 설정"
+              onClick={() => setRuleLayer(l.id)}
+            >
+              <Settings2 size={16} />
             </button>
             <button
               className={l.collider ? "active" : ""}
@@ -380,6 +394,38 @@ export function MapEditor({
           </div>
         ))}
       </div>
+      {ruleLayer && project.layers.some((l) => l.id === ruleLayer) && (
+        <AutotileEditor
+          layer={project.layers.find((l) => l.id === ruleLayer)!}
+          assets={assets}
+          tileSize={project.tileSize}
+          onClose={() => setRuleLayer(undefined)}
+          onApply={(config) => {
+            try {
+              if (
+                JSON.stringify(
+                  project.layers.find((l) => l.id === ruleLayer)?.autotile,
+                ) === JSON.stringify(config)
+              ) {
+                setRuleLayer(undefined);
+                return;
+              }
+              const updated = {
+                ...project,
+                layers: project.layers.map((l) =>
+                  l.id === ruleLayer ? { ...l, autotile: config } : l,
+                ),
+              };
+              requireTileDimensions(updated, assets);
+              record();
+              publish(updated);
+              setRuleLayer(undefined);
+            } catch (e) {
+              onError((e as Error).message);
+            }
+          }}
+        />
+      )}
     </section>
   );
 }
