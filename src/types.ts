@@ -16,6 +16,7 @@ export interface Job {
   stage?: string;
   clips?: AnimationClip[];
   reviewRequired?: boolean;
+  archiveUrl?: string;
   request: { kind: string; prompt?: string };
 }
 export interface Capabilities {

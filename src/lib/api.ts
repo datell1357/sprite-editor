@@ -17,6 +17,11 @@ async function request<T>(url: string, data?: unknown): Promise<T> {
   return payload as T;
 }
 export const api = {
+  importRun: (archive: string, maxClips: number) =>
+    request<{ assets: Asset[]; clips: AnimationClip[]; archiveUrl: string }>(
+      "/api/import-run",
+      { archive, maxClips },
+    ),
   animate: (input: {
     prompt: string;
     size: number;

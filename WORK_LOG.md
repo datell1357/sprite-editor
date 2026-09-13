@@ -44,7 +44,12 @@ Sprite Fusion의 캔버스 중심 UX를 참고해 sprite-gen 생성, Pixel Snapp
 - 후보 목록 완료: 재생 프레임 제외→후보 보관→원래 duration으로 끝에 복원.
   선택 자산을 바로 후보로 보관 가능. 후보-only 자산도 portable project에서 검증/ID remap.
   브라우저 375ms 프레임 후보 이동→새로고침 유지→재생 복원 375ms 확인. 프런트엔드 23개 통과.
-- 다음: 방향 앵커/다방향 생성 연결, 외부 raw/run의 후보 pool 가져오기, 실제 provider 품질 검증.
+- 외부 run ZIP 가져오기 완료: baked atlas는 재생, 추출 files는 후보로 분리.
+  원본 ZIP은 그대로 보존하고 완료 작업에서 다시 다운로드. curation 코드는 실행/재해석하지 않음.
+  경로/중복/링크/압축/파일수/메모리/후보 누락 검증 후 자산+완료 작업을 DB transaction으로 게시.
+  실제 run ZIP API 검사: 재생3/후보3/총6자산, 다운로드 ZIP 바이트 동일.
+  브라우저 완료 작업 채택과 중복 방지, 후보 표시 통과. 파일 선택 자동화는 반복하지 않았다.
+- 다음: 방향 앵커/다방향 생성 연결, 실제 provider 품질 검증.
 - 작업 수명 보강 완료: 취소 시 bounded process-group 종료, queued 취소의 실행 방지,
   정상 서버 종료 시 정리, 중복 포트 실행의 기존 job 상태 보존, 요청 형식/프롬프트 정규화.
 - 이전 HEAD 재현: SIGTERM 무시 provider 취소 후 다음 작업은 queued에 남았다.

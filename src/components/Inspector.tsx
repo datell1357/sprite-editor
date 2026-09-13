@@ -387,7 +387,9 @@ export function Inspector({
                   disabled={busy}
                   onClick={() => perform(() => onUseClips(job.clips!))}
                 >
-                  생성 클립 추가 / 열기
+                  {job.request.kind === "import-run"
+                    ? "가져온 클립 추가 / 열기"
+                    : "생성 클립 추가 / 열기"}
                 </button>
                 {job.reviewRequired && (
                   <p className="hint">
@@ -397,6 +399,11 @@ export function Inspector({
               </>
             )}
             {job.error && <p className="notice">{job.error}</p>}
+            {job.archiveUrl && (
+              <a href={job.archiveUrl} download>
+                가져온 원본 ZIP 받기
+              </a>
+            )}
           </div>
         ))}
       </section>

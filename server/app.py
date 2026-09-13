@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 from .jobs import Jobs, capabilities
 from .store import Store
 from .atlas import import_atlas
+from .run_import import import_run
 
 
 def make_handler(store, jobs):
@@ -17,13 +18,15 @@ def make_handler(store, jobs):
         def log_message(self, *_args):
             pass
 
-        def respond(self, status, payload, content_type="application/json"):
+        def respond(self, status, payload, content_type="application/json", filename=None):
             data = json.dumps(payload, ensure_ascii=False).encode() if content_type == "application/json" else payload
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(data)))
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Cache-Control", "no-store")
+            if filename:
+                self.send_header('Content-Disposition',f'attachment; filename="{filename}"')
             self.end_headers()
             self.wfile.write(data)
 
@@ -37,6 +40,11 @@ def make_handler(store, jobs):
                 match = re.fullmatch(r"/api/assets/([a-f0-9-]{36})/image", path)
                 if match:
                     return self.respond(200, store.image_path(match[1]).read_bytes(), "image/png")
+                match=re.fullmatch(r'/api/imports/([a-f0-9-]{36})/archive',path)
+                if match:
+                    job=store.get('jobs',match[1])
+                    if job.get('request',{}).get('kind')!='import-run': raise KeyError('archive')
+                    return self.respond(200,(store.root/'imports'/f'{match[1]}.zip').read_bytes(),'application/zip','sprite-gen-run.zip')
                 self.respond(404, {"error": "경로를 찾을 수 없습니다."})
             except (KeyError, FileNotFoundError):
                 self.respond(404, {"error": "자산을 찾을 수 없습니다."})
@@ -59,6 +67,8 @@ def make_handler(store, jobs):
                     return self.respond(201, store.import_data_url(payload))
                 if self.path == "/api/import-atlas":
                     return self.respond(201, import_atlas(store, payload))
+                if self.path == '/api/import-run':
+                    return self.respond(201,import_run(store,payload))
                 if self.path == "/api/jobs":
                     return self.respond(202, jobs.submit(payload))
                 match = re.fullmatch(r"/api/jobs/([a-f0-9-]{36})/cancel", self.path)

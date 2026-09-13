@@ -104,7 +104,7 @@ def import_atlas(store, payload):
     return publish_images(store, images, clips)
 
 
-def publish_images(store, images, clips):
+def publish_images(store, images, clips, job=None):
     # PNG files are immutable and new. Metadata becomes visible in a single DB transaction.
     assets = []
     for image, meta in images:
@@ -113,4 +113,6 @@ def publish_images(store, images, clips):
                        "createdAt": now(), "url": f"/api/assets/{meta['id']}/image"})
     with store.connect() as db:
         db.executemany("INSERT INTO assets VALUES (?, ?)", [(a["id"], json.dumps(a)) for a in assets])
+        if job:
+            db.execute('INSERT INTO jobs VALUES (?, ?)', (job['id'], json.dumps(job)))
     return {"assets": assets, "clips": clips}

@@ -1330,3 +1330,9 @@ canvas {
 .timeline.has-candidates {
   height: 270px;
 }
+.job a {
+  display: block;
+  color: var(--accent);
+  font-size: 11px;
+  margin-top: 8px;
+}
