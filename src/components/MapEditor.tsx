@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Pencil,
+  PaintBucket,
   Eraser,
   MousePointer2,
   Eye,
@@ -13,6 +14,7 @@ import {
 } from "lucide-react";
 import type { Asset, Project } from "../types";
 import { download, loadImage } from "../lib/api";
+import { fillRegion, paintCell } from "../lib/map";
 
 export function MapEditor({
   project,
@@ -32,13 +34,38 @@ export function MapEditor({
   const canvas = useRef<HTMLCanvasElement>(null),
     images = useRef(new Map<string, HTMLImageElement>());
   const [layerId, setLayer] = useState(project.layers[0].id),
-    [tool, setTool] = useState<"place" | "erase" | "select">("place"),
+    [tool, setTool] = useState<"place" | "erase" | "select" | "fill">("place"),
     [revision, bump] = useState(0);
   const [scale, setScale] = useState(1),
     drawing = useRef(false),
     visited = useRef(new Set<string>());
-  const previous = useRef<Project[]>([]),
-    next = useRef<Project[]>([]);
+  const previous = useRef<Pick<Project, "placements" | "layers">[]>([]),
+    next = useRef<Pick<Project, "placements" | "layers">[]>([]);
+  const working = useRef(project),
+    lastPublished = useRef(project),
+    strokeRecorded = useRef(false);
+  useLayoutEffect(() => {
+    const last = lastPublished.current;
+    if (
+      project.placements !== last.placements ||
+      project.layers !== last.layers ||
+      project.mapWidth !== last.mapWidth ||
+      project.mapHeight !== last.mapHeight ||
+      project.tileSize !== last.tileSize
+    ) {
+      previous.current = [];
+      next.current = [];
+      drawing.current = false;
+      bump((v) => v + 1);
+    }
+    working.current = project;
+    lastPublished.current = project;
+  }, [project]);
+  function publish(updated: Project) {
+    working.current = updated;
+    lastPublished.current = updated;
+    onChange(updated);
+  }
   useEffect(() => {
     let live = true;
     Promise.all(
@@ -97,12 +124,20 @@ export function MapEditor({
     if (canvas.current) render(canvas.current.getContext("2d")!, true);
   }, [project, revision]);
   function record() {
-    previous.current.push(structuredClone(project));
+    previous.current.push({
+      placements: working.current.placements,
+      layers: working.current.layers,
+    });
     if (previous.current.length > 30) previous.current.shift();
     next.current = [];
   }
   function paint(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (!drawing.current || (!selected && tool === "place")) return;
+    if (
+      !drawing.current ||
+      (!selected && (tool === "place" || tool === "fill"))
+    )
+      return;
+    const current = working.current;
     const rect = e.currentTarget.getBoundingClientRect(),
       x = Math.floor(((e.clientX - rect.left) / rect.width) * project.mapWidth),
       y = Math.floor(
@@ -124,27 +159,42 @@ export function MapEditor({
       if (item) onSelect(item.assetId);
       return;
     }
-    const filtered = project.placements.filter(
-      (p) => !(p.x === x && p.y === y && p.layerId === layerId),
-    );
-    onChange({
-      ...project,
-      placements:
-        tool === "erase"
-          ? filtered
-          : [
-              ...filtered,
-              { id: crypto.randomUUID(), assetId: selected!, x, y, layerId },
-            ],
-    });
+    try {
+      const placements =
+        tool === "fill"
+          ? fillRegion(current, layerId, x, y, selected!)
+          : paintCell(
+              current,
+              layerId,
+              x,
+              y,
+              tool === "erase" ? undefined : selected,
+            );
+      if (placements === current.placements) return;
+      if (!strokeRecorded.current) {
+        record();
+        strokeRecorded.current = true;
+      }
+      publish({ ...current, placements });
+    } catch (error) {
+      onError((error as Error).message);
+    }
   }
+
   function undo(redo = false) {
     const from = redo ? next.current : previous.current,
       to = redo ? previous.current : next.current;
     const p = from.pop();
     if (p) {
-      to.push(project);
-      onChange(p);
+      to.push({
+        placements: working.current.placements,
+        layers: working.current.layers,
+      });
+      publish({
+        ...working.current,
+        placements: p.placements,
+        layers: p.layers,
+      });
     }
   }
   function exportMap() {
@@ -161,12 +211,13 @@ export function MapEditor({
           <h2>{project.name}</h2>
           <span>
             {project.mapWidth} × {project.mapHeight} tiles · {project.tileSize}
-            px
+            px · {project.placements.length} placements
           </span>
         </div>
         <div className="inline">
           <button
             title="맵 실행 취소"
+            aria-label="맵 실행 취소"
             disabled={!previous.current.length}
             onClick={() => undo()}
           >
@@ -174,6 +225,7 @@ export function MapEditor({
           </button>
           <button
             title="맵 다시 실행"
+            aria-label="맵 다시 실행"
             disabled={!next.current.length}
             onClick={() => undo(true)}
           >
@@ -186,6 +238,15 @@ export function MapEditor({
         </div>
       </div>
       <div className="map-toolbar">
+        <button
+          className={tool === "fill" ? "active" : ""}
+          disabled={!selected}
+          onClick={() => setTool("fill")}
+          title="선택한 레이어에서 연결된 같은 자산 또는 빈 영역 채우기"
+        >
+          <PaintBucket size={16} />
+          채우기
+        </button>
         <button
           className={tool === "place" ? "active" : ""}
           onClick={() => setTool("place")}
@@ -235,11 +296,12 @@ export function MapEditor({
           }}
           onPointerDown={(e) => {
             if (!project.layers.find((l) => l.id === layerId)?.visible) return;
-            if (tool !== "select") record();
+            strokeRecorded.current = false;
             visited.current.clear();
             drawing.current = true;
             e.currentTarget.setPointerCapture(e.pointerId);
             paint(e);
+            if (tool === "fill") drawing.current = false;
           }}
           onPointerMove={paint}
           onPointerUp={() => {
@@ -258,7 +320,7 @@ export function MapEditor({
             onClick={() => {
               record();
               const id = crypto.randomUUID();
-              onChange({
+              publish({
                 ...project,
                 layers: [
                   ...project.layers,
@@ -286,7 +348,7 @@ export function MapEditor({
               aria-label={`${l.name} 표시 전환`}
               onClick={() => {
                 record();
-                onChange({
+                publish({
                   ...project,
                   layers: project.layers.map((a) =>
                     a.id === l.id ? { ...a, visible: !a.visible } : a,
@@ -305,7 +367,7 @@ export function MapEditor({
               title="충돌 레이어"
               onClick={() => {
                 record();
-                onChange({
+                publish({
                   ...project,
                   layers: project.layers.map((a) =>
                     a.id === l.id ? { ...a, collider: !a.collider } : a,
