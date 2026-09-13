@@ -66,6 +66,7 @@ export interface AnimationClip {
   id: string;
   name: string;
   frames: ClipFrame[];
+  candidates?: ClipFrame[];
   fps: number;
   loop: boolean;
   variant?: "plain" | "pixel-unfake";

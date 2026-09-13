@@ -5,12 +5,18 @@ import {
   Plus,
   ChevronLeft,
   ChevronRight,
-  X,
+  Archive,
+  ArrowUp,
   Download,
 } from "lucide-react";
 import type { AnimationClip, Asset } from "../types";
 import { download, downloadJSON, loadImage } from "../lib/api";
-import { frameAtElapsed } from "../lib/animation";
+import {
+  frameAtElapsed,
+  keepCandidate,
+  excludeFrame,
+  restoreCandidate,
+} from "../lib/animation";
 
 export function Timeline({
   assets,
@@ -31,6 +37,16 @@ export function Timeline({
     [frame, setFrame] = useState(0);
   const { fps, frames: clipFrames, loop } = clip;
   const sequence = clipFrames.map((f) => f.assetId);
+  const candidates = clip.candidates || [];
+  function curate(action: () => AnimationClip) {
+    try {
+      onClip(action());
+      return true;
+    } catch (e) {
+      onError((e as Error).message);
+      return false;
+    }
+  }
   useEffect(() => {
     if (!playing || !clipFrames.length) return;
     const offset = clipFrames
@@ -117,7 +133,9 @@ export function Timeline({
     }
   }
   return (
-    <section className="timeline panel">
+    <section
+      className={`timeline panel ${candidates.length ? "has-candidates" : ""}`}
+    >
       <div className="section-title">
         <h2>
           Timeline <span>{sequence.length} frames</span>
@@ -210,15 +228,12 @@ export function Timeline({
                   <ChevronLeft size={13} />
                 </button>
                 <button
-                  aria-label={`프레임 ${i + 1} 제거`}
-                  onClick={() =>
-                    onClip({
-                      ...clip,
-                      frames: clipFrames.filter((_, n) => n !== i),
-                    })
-                  }
+                  aria-label={`프레임 ${i + 1} 후보로 이동`}
+                  title="재생에서 제외하고 후보로 보관"
+                  disabled={candidates.length >= 256}
+                  onClick={() => curate(() => excludeFrame(clip, i))}
                 >
-                  <X size={13} />
+                  <Archive size={13} />
                 </button>
                 <button
                   aria-label={`프레임 ${i + 1} 뒤로`}
@@ -284,6 +299,50 @@ export function Timeline({
           />{" "}
           ms
         </label>
+      )}
+      <div className="candidate-heading">
+        <span>후보 {candidates.length}개 · 재생에서 제외됨</span>
+        <button
+          disabled={!selected || candidates.length >= 256}
+          onClick={() =>
+            selected &&
+            curate(() =>
+              keepCandidate(clip, {
+                assetId: selected,
+                durationMs: 1000 / fps,
+              }),
+            )
+          }
+        >
+          <Archive size={13} />
+          선택 자산 보관
+        </button>
+      </div>
+      {!!candidates.length && (
+        <div className="candidate-list">
+          {candidates.map((f, i) => (
+            <div className="candidate" key={`${i}-${f.assetId}`}>
+              <button
+                aria-label={`후보 ${i + 1} 선택`}
+                onClick={() => onSelect(f.assetId)}
+              >
+                <img src={assets.find((a) => a.id === f.assetId)?.url} alt="" />
+                <span>{Math.round(f.durationMs * 100) / 100}ms</span>
+              </button>
+              <button
+                aria-label={`후보 ${i + 1} 재생에 추가`}
+                title="기존 시간으로 재생 목록 끝에 복원"
+                disabled={clip.frames.length >= 256}
+                onClick={() => {
+                  if (curate(() => restoreCandidate(clip, i)))
+                    setFrame(clip.frames.length);
+                }}
+              >
+                <ArrowUp size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
       )}
     </section>
   );

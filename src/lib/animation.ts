@@ -1,4 +1,4 @@
-import type { ClipFrame } from "../types";
+import type { AnimationClip, ClipFrame } from "../types";
 
 export function frameAtElapsed(
   frames: ClipFrame[],
@@ -15,4 +15,36 @@ export function frameAtElapsed(
     time -= frames[i].durationMs;
   }
   return { index: frames.length - 1, ended: false };
+}
+
+export function keepCandidate(
+  clip: AnimationClip,
+  frame: ClipFrame,
+): AnimationClip {
+  if ((clip.candidates?.length || 0) >= 256)
+    throw new Error("후보는 클립당 최대 256개입니다.");
+  return { ...clip, candidates: [...(clip.candidates || []), { ...frame }] };
+}
+export function excludeFrame(
+  clip: AnimationClip,
+  index: number,
+): AnimationClip {
+  if (!Number.isInteger(index) || !clip.frames[index])
+    throw new Error("프레임을 찾을 수 없습니다.");
+  const next = keepCandidate(clip, clip.frames[index]);
+  return { ...next, frames: clip.frames.filter((_, i) => i !== index) };
+}
+export function restoreCandidate(
+  clip: AnimationClip,
+  index: number,
+): AnimationClip {
+  if (!Number.isInteger(index) || !clip.candidates?.[index])
+    throw new Error("후보를 찾을 수 없습니다.");
+  if (clip.frames.length >= 256)
+    throw new Error("재생 프레임은 클립당 최대 256개입니다.");
+  return {
+    ...clip,
+    frames: [...clip.frames, { ...clip.candidates[index] }],
+    candidates: clip.candidates.filter((_, i) => i !== index),
+  };
 }

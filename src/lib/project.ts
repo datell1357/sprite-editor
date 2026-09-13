@@ -124,7 +124,9 @@ export function validateProject(value: unknown): Project {
         c.fps > 60 ||
         !Array.isArray(c.frames) ||
         c.frames.length > 256 ||
-        c.frames.some(
+        (c.candidates !== undefined &&
+          (!Array.isArray(c.candidates) || c.candidates.length > 256)) ||
+        [...c.frames, ...(c.candidates || [])].some(
           (f) =>
             !f ||
             typeof f.assetId !== "string" ||
@@ -168,7 +170,9 @@ export function validatePortable(value: unknown): PortableProject {
   if (
     ids.size !== p.assets.length ||
     [
-      ...project.clips.flatMap((c) => c.frames.map((f) => f.assetId)),
+      ...project.clips.flatMap((c) =>
+        [...c.frames, ...(c.candidates || [])].map((f) => f.assetId),
+      ),
       ...project.placements.map((t) => t.assetId),
       ...autotileAssets(project),
     ].some((id) => !ids.has(id))
@@ -224,6 +228,14 @@ export function remapProject(
     clips: project.clips.map((c) => ({
       ...c,
       frames: c.frames.map((f) => ({ ...f, assetId: ids.get(f.assetId)! })),
+      ...(c.candidates
+        ? {
+            candidates: c.candidates.map((f) => ({
+              ...f,
+              assetId: ids.get(f.assetId)!,
+            })),
+          }
+        : {}),
     })),
     placements: project.placements.map((t) => ({
       ...t,
@@ -234,7 +246,9 @@ export function remapProject(
 
 export function usedAssets(project: Project, assets: Asset[]) {
   const ids = new Set([
-    ...project.clips.flatMap((c) => c.frames.map((f) => f.assetId)),
+    ...project.clips.flatMap((c) =>
+      [...c.frames, ...(c.candidates || [])].map((f) => f.assetId),
+    ),
     ...project.placements.map((t) => t.assetId),
     ...autotileAssets(project),
   ]);

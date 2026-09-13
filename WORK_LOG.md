@@ -41,7 +41,10 @@ Sprite Fusion의 캔버스 중심 UX를 참고해 sprite-gen 생성, Pixel Snapp
   raw 배치 보존, 이웃 편집 시 재계산, 화면/PNG 공용 resolver, 규칙/참조 자산 프로젝트 복원.
   브라우저 규칙 생성·이웃 삭제·새 탭 복원 통과. PNG 768×512에서 삭제 칸/이웃/상단/내부 픽셀 일치.
   프런트엔드 20개와 빌드 통과, 비교 작업의 Python 24개 통과. 편집 중 HMR 오류는 수정 후 새 탭에서 해소.
-- 다음: 방향 앵커/다방향 생성 연결, raw/후보 pool import, 실제 provider 품질 검증.
+- 후보 목록 완료: 재생 프레임 제외→후보 보관→원래 duration으로 끝에 복원.
+  선택 자산을 바로 후보로 보관 가능. 후보-only 자산도 portable project에서 검증/ID remap.
+  브라우저 375ms 프레임 후보 이동→새로고침 유지→재생 복원 375ms 확인. 프런트엔드 23개 통과.
+- 다음: 방향 앵커/다방향 생성 연결, 외부 raw/run의 후보 pool 가져오기, 실제 provider 품질 검증.
 - 작업 수명 보강 완료: 취소 시 bounded process-group 종료, queued 취소의 실행 방지,
   정상 서버 종료 시 정리, 중복 포트 실행의 기존 job 상태 보존, 요청 형식/프롬프트 정규화.
 - 이전 HEAD 재현: SIGTERM 무시 provider 취소 후 다음 작업은 queued에 남았다.

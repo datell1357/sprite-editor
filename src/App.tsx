@@ -364,7 +364,9 @@ export default function App() {
           onImport={() => fileInput.current?.click()}
           onBlank={blank}
         />
-        <div className="main-workspace">
+        <div
+          className={`main-workspace ${clip.candidates?.length ? "with-candidates" : ""}`}
+        >
           {mode === "sprite" ? (
             <>
               <div className="clip-toolbar">
