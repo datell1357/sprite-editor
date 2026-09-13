@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -20,6 +26,7 @@ import {
   emptyProject,
   activeClip,
   updateClip,
+  adoptClips,
   orderedAssets,
   remapProject,
   validatePortable,
@@ -65,6 +72,10 @@ export default function App() {
     [inspector, setInspector] = useState(() => window.innerWidth > 850),
     [saveState, setSaveState] = useState("Saved locally");
   const recovery = useRef(initial.recover);
+  const latestProject = useRef(project);
+  useLayoutEffect(() => {
+    latestProject.current = project;
+  }, [project]);
   const fileInput = useRef<HTMLInputElement>(null),
     projectInput = useRef<HTMLInputElement>(null),
     dirty = useRef(false);
@@ -438,6 +449,14 @@ export default function App() {
             color={color}
             onColor={setColor}
             onJob={refresh}
+            onUseClips={async (clips) => {
+              await refresh();
+              const next = adoptClips(latestProject.current, clips);
+              setProject(next);
+              setMode("sprite");
+              if (!dirty.current && clips[0].frames[0])
+                setSelected(clips[0].frames[0].assetId);
+            }}
             onError={onError}
           />
         )}

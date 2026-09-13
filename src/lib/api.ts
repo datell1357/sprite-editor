@@ -17,6 +17,17 @@ async function request<T>(url: string, data?: unknown): Promise<T> {
   return payload as T;
 }
 export const api = {
+  animate: (input: {
+    prompt: string;
+    size: number;
+    referenceId: string;
+    state: string;
+    frames: number;
+    fps: number;
+    loop: boolean;
+    accessConfirmed: boolean;
+  }) =>
+    request<Job>("/api/jobs", { kind: "animate", provider: "codex", ...input }),
   importAtlas: (manifest: unknown, png: string) =>
     request<{ assets: Asset[]; clips: AnimationClip[] }>("/api/import-atlas", {
       manifest,

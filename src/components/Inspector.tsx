@@ -6,7 +6,7 @@ import {
   X,
   LoaderCircle,
 } from "lucide-react";
-import type { Asset, Capabilities, Job } from "../types";
+import type { AnimationClip, Asset, Capabilities, Job } from "../types";
 import { api } from "../lib/api";
 
 const palette = [
@@ -31,6 +31,7 @@ export function Inspector({
   onColor,
   onJob,
   onError,
+  onUseClips,
 }: {
   selected?: Asset;
   capabilities: Capabilities | null;
@@ -39,11 +40,18 @@ export function Inspector({
   onColor: (s: string) => void;
   onJob: () => void;
   onError: (s: string) => void;
+  onUseClips: (clips: AnimationClip[]) => Promise<void>;
 }) {
   const [prompt, setPrompt] = useState(""),
     [provider, setProvider] = useState("codex"),
     [size, setSize] = useState(32),
     [reference, setReference] = useState(false);
+  const [mode, setMode] = useState<"generate" | "animate">("generate"),
+    [state, setState] = useState("walk"),
+    [frames, setFrames] = useState(4),
+    [fps, setFps] = useState(8),
+    [loop, setLoop] = useState(true),
+    [accessConfirmed, setAccessConfirmed] = useState(false);
   const [colors, setColors] = useState(16),
     [pitch, setPitch] = useState(""),
     [busy, setBusy] = useState(false);
@@ -64,6 +72,20 @@ export function Inspector({
         <h2>
           <Sparkles size={20} /> Create
         </h2>
+        <div className="segmented" aria-label="생성 종류">
+          <button
+            className={mode === "generate" ? "active" : ""}
+            onClick={() => setMode("generate")}
+          >
+            이미지
+          </button>
+          <button
+            className={mode === "animate" ? "active" : ""}
+            onClick={() => setMode("animate")}
+          >
+            애니메이션
+          </button>
+        </div>
         <textarea
           aria-label="생성 프롬프트"
           placeholder="어떤 자산을 만들까요? 예: 황동 장식이 달린 나무 보물상자"
@@ -75,7 +97,8 @@ export function Inspector({
           Provider
           <select
             aria-label="생성 제공자"
-            value={provider}
+            disabled={mode === "animate"}
+            value={mode === "animate" ? "codex" : provider}
             onChange={(e) => setProvider(e.target.value)}
           >
             <option value="codex">GPT · Codex</option>
@@ -95,31 +118,116 @@ export function Inspector({
             ))}
           </select>
         </label>
-        <label className="check-field">
-          <input
-            type="checkbox"
-            disabled={!selected}
-            checked={reference && !!selected}
-            onChange={(e) => setReference(e.target.checked)}
-          />
-          선택 자산을 참조해 생성
-        </label>
+        {mode === "animate" ? (
+          <>
+            <p className="hint">
+              저장된 기준 자산: {selected?.name || "라이브러리에서 선택하세요"}.
+              방향은 기준 이미지를 유지합니다.
+            </p>
+            <label className="field">
+              동작 상태
+              <select
+                aria-label="동작 상태"
+                value={state}
+                onChange={(e) => setState(e.target.value)}
+              >
+                {["idle", "walk", "run", "attack", "jump"].map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              프레임 수
+              <input
+                aria-label="생성 프레임 수"
+                type="number"
+                min={2}
+                max={16}
+                value={frames}
+                onChange={(e) => setFrames(Number(e.target.value))}
+              />
+            </label>
+            <label className="field">
+              FPS
+              <input
+                aria-label="생성 FPS"
+                type="number"
+                min={1}
+                max={60}
+                value={fps}
+                onChange={(e) => setFps(Number(e.target.value))}
+              />
+            </label>
+            <label className="check-field">
+              <input
+                type="checkbox"
+                checked={loop}
+                onChange={(e) => setLoop(e.target.checked)}
+              />
+              반복 애니메이션 생성
+            </label>
+            <label className="check-field">
+              <input
+                type="checkbox"
+                checked={accessConfirmed}
+                onChange={(e) => setAccessConfirmed(e.target.checked)}
+              />
+              GPT 이미지 생성 이용 권한을 확인했습니다
+            </label>
+          </>
+        ) : (
+          <label className="check-field">
+            <input
+              type="checkbox"
+              disabled={!selected}
+              checked={reference && !!selected}
+              onChange={(e) => setReference(e.target.checked)}
+            />
+            선택 자산을 참조해 생성
+          </label>
+        )}
         <button
           className="primary wide"
-          disabled={busy || !prompt.trim() || !capabilities?.spriteGen}
+          disabled={
+            busy ||
+            !prompt.trim() ||
+            !capabilities?.spriteGen ||
+            (mode === "animate" &&
+              (!selected ||
+                !accessConfirmed ||
+                !Number.isInteger(frames) ||
+                frames < 2 ||
+                frames > 16 ||
+                !Number.isInteger(fps) ||
+                fps < 1 ||
+                fps > 60))
+          }
           onClick={() =>
             perform(() =>
-              api.generate(
-                prompt,
-                provider,
-                size,
-                reference ? selected?.id : undefined,
-              ),
+              mode === "animate"
+                ? api.animate({
+                    prompt,
+                    size,
+                    referenceId: selected!.id,
+                    state,
+                    frames,
+                    fps,
+                    loop,
+                    accessConfirmed,
+                  })
+                : api.generate(
+                    prompt,
+                    provider,
+                    size,
+                    reference ? selected?.id : undefined,
+                  ),
             )
           }
         >
           <Sparkles size={17} />
-          Generate
+          {mode === "animate" ? "Animate" : "Generate"}
         </button>
         <p className="hint">
           연결된 계정으로 실행합니다. 제공자의 이용 한도·요금이 적용되며, 실제
@@ -257,6 +365,37 @@ export function Inspector({
                 }[job.status]
               }
             </small>
+            {job.status === "running" && job.stage && (
+              <small>
+                {(
+                  {
+                    access: "이용 권한 확인",
+                    prepare: "기준·가이드 준비",
+                    generate: "이미지 생성",
+                    extract: "프레임 추출",
+                    compose: "아틀라스 합성",
+                    inspect: "결과 검사",
+                    snap: "픽셀 정리",
+                  } as Record<string, string>
+                )[job.stage] || job.stage}
+              </small>
+            )}
+            {job.status === "completed" && job.clips?.length && (
+              <>
+                <button
+                  className="wide"
+                  disabled={busy}
+                  onClick={() => perform(() => onUseClips(job.clips!))}
+                >
+                  생성 클립 추가 / 열기
+                </button>
+                {job.reviewRequired && (
+                  <p className="hint">
+                    추가한 뒤 움직임과 캐릭터 일관성을 확인하세요.
+                  </p>
+                )}
+              </>
+            )}
             {job.error && <p className="notice">{job.error}</p>}
           </div>
         ))}

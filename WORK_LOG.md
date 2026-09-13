@@ -25,7 +25,15 @@ Sprite Fusion의 캔버스 중심 UX를 참고해 sprite-gen 생성, Pixel Snapp
 - 관련 검사: 프런트엔드 14개와 빌드 통과. 최대 128×128 그리드 및 용량 초과 검사.
   브라우저 24×16 빈 맵→384 배치→무변경 재클릭→undo 0→redo 384 확인.
   undo 후 수정한 프로젝트 이름 유지, 브라우저 오류 미관찰.
-- 다음: 상태·방향 생성 job 연결, Pixel Unfake 비교 variant,
+- 애니메이션 생성 연결 완료: 저장된 기준 자산+GPT 이미지 행으로 한 상태를 생성한다.
+  workflow/prepare/gen-set/extract/compose/inspect를 공용 deadline·취소 관리자로 실행한다.
+  상태/프레임/FPS/loop/셀 크기/QA 검사 후 클립 후보를 반환하고 명시적 버튼으로 채택한다.
+  기준 방향은 유지하며 새 방향 앵커 생성은 아직 연결하지 않았다.
+- 검사: 로컬 provider stand-in의 전 단계·중간 실패·단계 사이 취소·잘못된 프레임 수·QA 실패.
+  실제 설치된 sprite-gen에서도 생성 단계만 격자 fixture로 대체해 prepare/extract/compose/inspect 통과.
+  이전 단순 도형 fixture는 너무 적은 픽셀로 추출되어 기존 sparse 기준에서 거부됐으며 기준은 그대로 유지.
+  실제 provider 호출 및 계정 이용 권한 검증은 미실행. UI에서 권한 미확인 시 Animate 비활성 확인.
+- 다음: 방향 앵커/다방향 생성 연결, Pixel Unfake 비교 variant,
   autotile, raw/후보 pool import.
 - 작업 수명 보강 완료: 취소 시 bounded process-group 종료, queued 취소의 실행 방지,
   정상 서버 종료 시 정리, 중복 포트 실행의 기존 job 상태 보존, 요청 형식/프롬프트 정규화.

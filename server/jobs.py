@@ -12,6 +12,8 @@ import uuid
 from pathlib import Path
 
 from .store import now
+from .animation import validate_animation, animation_plan, animation_output
+from .atlas import import_atlas
 
 JOB_TIMEOUT_SECONDS = 1200
 TERMINATION_GRACE_SECONDS = 5
@@ -34,8 +36,8 @@ def stop_process_group(process):
     process.wait(timeout=5)
 
 
-def wait_for_process(process, cancelled):
-    deadline = time.monotonic() + JOB_TIMEOUT_SECONDS
+def wait_for_process(process, cancelled, deadline=None):
+    deadline = deadline if deadline is not None else time.monotonic() + JOB_TIMEOUT_SECONDS
     while True:
         if cancelled.is_set():
             stop_process_group(process)
@@ -93,13 +95,15 @@ class Jobs:
         if not isinstance(payload, dict):
             raise ValueError("작업 요청은 JSON 객체여야 합니다.")
         kind = payload.get("kind")
-        if not isinstance(kind, str) or kind not in {"generate", "snap"}:
+        if not isinstance(kind, str) or kind not in {"generate", "snap", "animate"}:
             raise ValueError("지원하지 않는 작업입니다.")
         allowed = {"kind", "prompt", "provider", "size", "referenceId"} if kind == "generate" else {"kind", "assetId", "colors", "pixelSize"}
+        if kind == "animate":
+            allowed = {"kind", "prompt", "provider", "size", "referenceId", "state", "frames", "fps", "loop", "accessConfirmed"}
         if set(payload) - allowed:
             raise ValueError("지원하지 않는 작업 설정입니다.")
         payload = dict(payload)
-        if kind == "generate":
+        if kind in {"generate", "animate"}:
             if not find_sprite_gen():
                 raise ValueError("sprite-gen을 설치하거나 SPRITE_GEN_BIN을 설정해 주세요.")
             prompt = payload.get("prompt")
@@ -114,6 +118,8 @@ class Jobs:
                 if not isinstance(payload["referenceId"], str) or not payload["referenceId"]:
                     raise ValueError("참조 자산 ID가 올바르지 않습니다.")
                 self.store.get("assets", payload["referenceId"])
+            if kind == "animate":
+                validate_animation(payload, self.store)
         else:
             if not find_snapper():
                 raise ValueError("Pixel Snapper를 먼저 빌드해 주세요.")
@@ -178,6 +184,20 @@ class Jobs:
             payload = job["request"]
             folder = self.store.root / "jobs" / job_id
             folder.mkdir()
+            deadline = time.monotonic() + JOB_TIMEOUT_SECONDS
+            if payload["kind"] == "animate":
+                for stage, command in animation_plan(find_sprite_gen(), payload, self.store.image_path(payload["referenceId"]), folder):
+                    if not self.run_command(job_id, command, stage, deadline):
+                        return
+                output_payload = animation_output(folder, payload)
+                with self.lock:
+                    current = self.store.get("jobs", job_id)
+                    if current["status"] == "cancelled":
+                        return
+                    result = import_atlas(self.store, output_payload)
+                    self.store.put("jobs", {**current, "status": "completed", "clips": result["clips"],
+                        "assetIds": [a["id"] for a in result["assets"]], "reviewRequired": True, "finishedAt": now()})
+                return
             output = folder / "output.png"
             parent = payload.get("assetId") or payload.get("referenceId")
             if payload["kind"] == "generate":
@@ -194,20 +214,12 @@ class Jobs:
                 if payload.get("pixelSize") is not None:
                     command += ["--pixel-size", str(payload["pixelSize"])]
                 name = self.store.get("assets", parent)["name"] + " · Snap"
+            if not self.run_command(job_id, command, "generate" if payload["kind"] == "generate" else "snap", deadline):
+                return
             with self.lock:
                 if self.store.get("jobs", job_id)["status"] == "cancelled":
                     return
-                process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-                self.processes[job_id] = process
-                cancelled = threading.Event()
-                self.cancellations[job_id] = cancelled
-            code = wait_for_process(process, cancelled)
-            with self.lock:
-                self.processes.pop(job_id, None)
-                self.cancellations.pop(job_id, None)
-                if self.store.get("jobs", job_id)["status"] == "cancelled":
-                    return
-                if code != 0 or not output.is_file():
+                if not output.is_file():
                     raise ValueError("처리에 실패했습니다. 제공자 로그인·이용 권한 또는 입력 이미지를 확인해 주세요. 자동 재시도는 하지 않았습니다.")
                 asset = self.store.add_image(output.read_bytes(), name[:120], parent)
                 self.store.put("jobs", {**job, "status": "completed", "assetId": asset["id"], "finishedAt": now()})
@@ -219,3 +231,28 @@ class Jobs:
                 if job["status"] != "cancelled":
                     message = str(exc) if isinstance(exc, ValueError) else "작업을 완료하지 못했습니다. 입력과 로컬 실행 환경을 확인해 주세요."
                     self.store.put("jobs", {**job, "status": "failed", "error": message})
+
+    def run_command(self, job_id, command, stage, deadline):
+        with self.lock:
+            job = self.store.get("jobs", job_id)
+            if job["status"] == "cancelled":
+                return False
+            if time.monotonic() >= deadline:
+                raise ValueError("작업 시간이 초과됐습니다. 자동 재시도하지 않았습니다.")
+            self.store.put("jobs", {**job, "stage": stage})
+            process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            self.processes[job_id] = process
+            cancelled = threading.Event()
+            self.cancellations[job_id] = cancelled
+        try:
+            code = wait_for_process(process, cancelled, deadline)
+        finally:
+            with self.lock:
+                self.processes.pop(job_id, None)
+                self.cancellations.pop(job_id, None)
+        with self.lock:
+            if self.store.get("jobs", job_id)["status"] == "cancelled":
+                return False
+        if code != 0:
+            raise ValueError(f"{stage} 단계에 실패했습니다. 계정 권한·입력·로컬 실행 환경을 확인해 주세요. 자동 재시도하지 않았습니다.")
+        return True

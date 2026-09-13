@@ -223,3 +223,13 @@ export function updateClip(project: Project, clip: AnimationClip): Project {
     clips: project.clips.map((c) => (c.id === clip.id ? clip : c)),
   };
 }
+
+export function adoptClips(project: Project, clips: AnimationClip[]): Project {
+  if (!clips.length) throw new Error("추가할 클립이 없습니다.");
+  const existing = new Set(project.clips.map((c) => c.id));
+  return validateProject({
+    ...project,
+    clips: [...project.clips, ...clips.filter((c) => !existing.has(c.id))],
+    activeClipId: clips[0].id,
+  });
+}

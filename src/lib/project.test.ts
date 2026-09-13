@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   orderedAssets,
+  adoptClips,
   emptyProject,
   remapProject,
   validatePortable,
@@ -8,6 +9,17 @@ import {
 } from "./project";
 
 describe("project import", () => {
+  it("adopts generated clips without overwriting existing clips or duplicating results", () => {
+    const p = emptyProject(),
+      generated = { ...p.clips[0], id: "generated", name: "walk" };
+    const next = adoptClips(p, [generated]);
+    expect(next.clips).toHaveLength(2);
+    expect(next.activeClipId).toBe("generated");
+    expect(adoptClips(next, [generated]).clips).toHaveLength(2);
+    expect(p.clips).toHaveLength(1);
+    expect(next.placements).toBe(p.placements);
+    expect(() => adoptClips(p, [])).toThrow();
+  });
   it("restores parent revisions before children and rejects cyclic lineage", () => {
     const assets = [
       { id: "edit", parentId: "source" },

@@ -12,6 +12,9 @@ export interface Job {
   status: "queued" | "running" | "completed" | "failed" | "cancelled";
   assetId?: string;
   error?: string;
+  stage?: string;
+  clips?: AnimationClip[];
+  reviewRequired?: boolean;
   request: { kind: string; prompt?: string };
 }
 export interface Capabilities {
