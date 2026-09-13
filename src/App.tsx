@@ -20,6 +20,7 @@ import { PixelEditor } from "./components/PixelEditor";
 import { Timeline } from "./components/Timeline";
 import { Inspector } from "./components/Inspector";
 import { AtlasImport } from "./components/AtlasImport";
+import { AssetComparison } from "./components/AssetComparison";
 import { MapEditor } from "./components/MapEditor";
 import { api, downloadJSON, pngData } from "./lib/api";
 import {
@@ -82,6 +83,8 @@ export default function App() {
   const [atlasOpen, setAtlasOpen] = useState(false);
   const clip = activeClip(project);
   const selected = assets.find((a) => a.id === selectedId);
+  const parentAsset = assets.find((a) => a.id === selected?.parentId);
+  const [comparing, setComparing] = useState(false);
   const onError = useCallback((message: string) => setError(message), []);
   const onDirty = useCallback((value: boolean) => {
     dirty.current = value;
@@ -246,6 +249,7 @@ export default function App() {
           a.name,
           a.png,
           a.parentId ? ids.get(a.parentId) : undefined,
+          a.processing,
         );
         ids.set(a.id, added.id);
       }
@@ -370,7 +374,11 @@ export default function App() {
                   >
                     {project.clips.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.name} · {c.frames.length} frames
+                        {c.name}
+                        {c.variant
+                          ? ` · ${c.variant === "plain" ? "정규화 전" : "Pixel Unfake"}`
+                          : ""}{" "}
+                        · {c.frames.length} frames
                       </option>
                     ))}
                   </select>
@@ -411,6 +419,8 @@ export default function App() {
                 onColor={setColor}
                 onError={onError}
                 onDirty={onDirty}
+                canCompare={!!parentAsset}
+                onCompare={() => setComparing(true)}
                 onSave={async (png) => {
                   if (selected)
                     await imported(
@@ -476,6 +486,14 @@ export default function App() {
             setAtlasOpen(false);
             refresh();
           }}
+        />
+      )}
+      {comparing && selected && parentAsset && (
+        <AssetComparison
+          source={parentAsset}
+          result={selected}
+          onChoose={select}
+          onClose={() => setComparing(false)}
         />
       )}
       <footer className="statusbar">

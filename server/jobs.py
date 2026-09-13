@@ -12,8 +12,7 @@ import uuid
 from pathlib import Path
 
 from .store import now
-from .animation import validate_animation, animation_plan, animation_output
-from .atlas import import_atlas
+from .animation import validate_animation, animation_plan, animation_output, publish_animation_variants
 
 JOB_TIMEOUT_SECONDS = 1200
 TERMINATION_GRACE_SECONDS = 5
@@ -194,7 +193,7 @@ class Jobs:
                     current = self.store.get("jobs", job_id)
                     if current["status"] == "cancelled":
                         return
-                    result = import_atlas(self.store, output_payload)
+                    result = publish_animation_variants(self.store, folder, payload, output_payload)
                     self.store.put("jobs", {**current, "status": "completed", "clips": result["clips"],
                         "assetIds": [a["id"] for a in result["assets"]], "reviewRequired": True, "finishedAt": now()})
                 return
@@ -221,7 +220,7 @@ class Jobs:
                     return
                 if not output.is_file():
                     raise ValueError("처리에 실패했습니다. 제공자 로그인·이용 권한 또는 입력 이미지를 확인해 주세요. 자동 재시도는 하지 않았습니다.")
-                asset = self.store.add_image(output.read_bytes(), name[:120], parent)
+                asset = self.store.add_image(output.read_bytes(), name[:120], parent, processing='pixel-snapper' if payload['kind']=='snap' else None)
                 self.store.put("jobs", {**job, "status": "completed", "assetId": asset["id"], "finishedAt": now()})
         except Exception as exc:
             with self.lock:

@@ -101,11 +101,15 @@ def parse_atlas(payload):
 
 def import_atlas(store, payload):
     images, clips = parse_atlas(payload)
+    return publish_images(store, images, clips)
+
+
+def publish_images(store, images, clips):
     # PNG files are immutable and new. Metadata becomes visible in a single DB transaction.
     assets = []
     for image, meta in images:
         image.save(store.root / "assets" / f"{meta['id']}.png")
-        assets.append({**meta, "width": image.width, "height": image.height, "parentId": None,
+        assets.append({"parentId": None, **meta, "width": image.width, "height": image.height,
                        "createdAt": now(), "url": f"/api/assets/{meta['id']}/image"})
     with store.connect() as db:
         db.executemany("INSERT INTO assets VALUES (?, ?)", [(a["id"], json.dumps(a)) for a in assets])

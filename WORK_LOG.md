@@ -33,7 +33,11 @@ Sprite Fusion의 캔버스 중심 UX를 참고해 sprite-gen 생성, Pixel Snapp
   실제 설치된 sprite-gen에서도 생성 단계만 격자 fixture로 대체해 prepare/extract/compose/inspect 통과.
   이전 단순 도형 fixture는 너무 적은 픽셀로 추출되어 기존 sparse 기준에서 거부됐으며 기준은 그대로 유지.
   실제 provider 호출 및 계정 이용 권한 검증은 미실행. UI에서 권한 미확인 시 Animate 비활성 확인.
-- 다음: 방향 앵커/다방향 생성 연결, Pixel Unfake 비교 variant,
+- Pixel Unfake 비교 완료: 새 animation job에서 canonical/plain 쌍을 같은 timing의 두 클립으로 게시.
+  plain 파일 누락·크기 불일치·frames 밖 경로는 실패하며 정규화 결과로 대체하지 않는다.
+  Pixel Snapper/일반 수정본도 parent 비교 dialog로 선택 가능. processing/variant는 프로젝트 export/import 유지.
+  실제 sprite-gen 3쌍(6자산)에서 parent·timing 일치, 원본 해시 불변 확인. 브라우저 원본 비교/선택 통과.
+- 다음: 방향 앵커/다방향 생성 연결,
   autotile, raw/후보 pool import.
 - 작업 수명 보강 완료: 취소 시 bounded process-group 종료, queued 취소의 실행 방지,
   정상 서버 종료 시 정리, 중복 포트 실행의 기존 job 상태 보존, 요청 형식/프롬프트 정규화.

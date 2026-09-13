@@ -6,6 +6,7 @@ export interface Asset {
   url: string;
   parentId: string | null;
   createdAt: string;
+  processing?: "plain" | "pixel-unfake" | "pixel-snapper";
 }
 export interface Job {
   id: string;
@@ -57,6 +58,7 @@ export interface AnimationClip {
   frames: ClipFrame[];
   fps: number;
   loop: boolean;
+  variant?: "plain" | "pixel-unfake";
 }
 export interface PortableProject {
   kind: "sprite-editor";

@@ -20,6 +20,46 @@ describe("project import", () => {
     expect(next.placements).toBe(p.placements);
     expect(() => adoptClips(p, [])).toThrow();
   });
+  it("preserves processing labels and variant timing on portable roundtrip", () => {
+    const p = emptyProject();
+    p.clips[0] = {
+      ...p.clips[0],
+      variant: "pixel-unfake",
+      frames: [{ assetId: "pixel", durationMs: 125 }],
+    };
+    const portable = validatePortable({
+      kind: "sprite-editor",
+      project: p,
+      assets: [
+        {
+          id: "pixel",
+          name: "pixel",
+          parentId: "plain",
+          processing: "pixel-unfake",
+          png: "data:image/png;base64,AA==",
+        },
+        {
+          id: "plain",
+          name: "plain",
+          processing: "plain",
+          png: "data:image/png;base64,AA==",
+        },
+      ],
+    });
+    const mapped = remapProject(
+      portable.project,
+      new Map([
+        ["pixel", "newPixel"],
+        ["plain", "newPlain"],
+      ]),
+    );
+    expect(mapped.clips[0].variant).toBe("pixel-unfake");
+    expect(mapped.clips[0].frames[0].durationMs).toBe(125);
+    expect(orderedAssets(portable.assets).map((a) => a.processing)).toEqual([
+      "plain",
+      "pixel-unfake",
+    ]);
+  });
   it("restores parent revisions before children and rejects cyclic lineage", () => {
     const assets = [
       { id: "edit", parentId: "source" },

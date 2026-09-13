@@ -34,6 +34,15 @@ if verb=='gen-set':
     (run/'generated').write_text('yes')
 if verb=='extract':
     assert (run/'generated').exists(); (run/'extracted').write_text('yes')
+    frames_dir=run/'frames'/state; frames_dir.mkdir(parents=True)
+    plain=[]
+    for i in range(row['frames']):
+        path=frames_dir/f'frame-{i}.plain.png'
+        Image.new('RGBA',(request['size'],request['size']),(20+i,100,200,128)).save(path)
+        plain.append(str(path.relative_to(run)))
+    if action.startswith('missing plain'): plain.pop()
+    if action.startswith('outside plain'): plain[0]='../../outside.png'
+    (run/'frames/frames-manifest.json').write_text(json.dumps({'ok':True,'rows':[{'state':state,'plain_files':plain}]}))
 if verb=='compose-atlas':
     assert (run/'extracted').exists()
     count=row['frames']+(1 if action.startswith('wrong count') else 0); size=request['size']
@@ -81,7 +90,11 @@ class AnimationTests(unittest.TestCase):
         self.assertEqual((clip['name'],len(clip['frames']),clip['fps'],clip['loop']),('walk',4,8,True))
         self.assertEqual([f['durationMs'] for f in clip['frames']],[125]*4)
         self.assertTrue(result['reviewRequired'])
-        self.assertEqual(len(self.store.list('assets')),5)
+        self.assertEqual(len(self.store.list('assets')),9)
+        self.assertEqual([c['variant'] for c in result['clips']],['pixel-unfake','plain'])
+        for pixel,plain in zip(result['clips'][0]['frames'],result['clips'][1]['frames']):
+            self.assertEqual(self.store.get('assets',pixel['assetId'])['parentId'],plain['assetId'])
+            self.assertEqual(pixel['durationMs'],plain['durationMs'])
         for frame in clip['frames']:
             with Image.open(self.store.image_path(frame['assetId'])) as image:
                 self.assertEqual(image.size,(32,32));self.assertEqual(image.getpixel((0,0))[3],128)
@@ -94,7 +107,7 @@ class AnimationTests(unittest.TestCase):
         self.assertEqual(len(self.store.list('assets')),1)
 
     def test_wrong_count_or_false_qa_report_never_becomes_a_clip(self):
-        for prompt in ('wrong count','bad qa'):
+        for prompt in ('wrong count','bad qa','missing plain','outside plain'):
             result=self.wait(self.jobs.submit(self.request(prompt=prompt)))
             self.assertEqual(result['status'],'failed')
             self.assertNotIn('clips',result)

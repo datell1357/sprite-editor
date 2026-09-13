@@ -36,8 +36,12 @@ export const api = {
   assets: () => request<Asset[]>("/api/assets"),
   jobs: () => request<Job[]>("/api/jobs"),
   status: () => request<Capabilities>("/api/status"),
-  import: (name: string, png: string, parentId?: string) =>
-    request<Asset>("/api/assets", { name, png, parentId }),
+  import: (
+    name: string,
+    png: string,
+    parentId?: string,
+    processing?: Asset["processing"],
+  ) => request<Asset>("/api/assets", { name, png, parentId, processing }),
   generate: (
     prompt: string,
     provider: string,

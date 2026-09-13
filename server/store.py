@@ -58,7 +58,9 @@ class Store:
         self.get("assets", asset_id)
         return self.root / "assets" / f"{asset_id}.png"
 
-    def add_image(self, data: bytes, name: str, parent_id=None):
+    def add_image(self, data: bytes, name: str, parent_id=None, processing=None):
+        if processing is not None and processing not in ('plain', 'pixel-unfake', 'pixel-snapper'):
+            raise ValueError('지원하지 않는 픽셀 처리 종류입니다.')
         if len(data) > MAX_IMAGE_BYTES:
             raise ValueError("이미지는 12MB 이하로 가져와 주세요.")
         if not isinstance(name, str) or not name.strip() or len(name) > 120:
@@ -81,6 +83,7 @@ class Store:
         return self.put("assets", {
             "id": asset_id, "name": name.strip(), "width": image.width, "height": image.height,
             "parentId": parent_id, "createdAt": now(), "url": f"/api/assets/{asset_id}/image",
+            **({'processing': processing} if processing else {}),
         })
 
     def import_data_url(self, payload):
@@ -91,4 +94,4 @@ class Store:
             data = base64.b64decode(encoded.split(",", 1)[1], validate=True)
         except ValueError as exc:
             raise ValueError("이미지 인코딩이 올바르지 않습니다.") from exc
-        return self.add_image(data, payload.get("name", ""), payload.get("parentId"))
+        return self.add_image(data, payload.get("name", ""), payload.get("parentId"), payload.get('processing'))

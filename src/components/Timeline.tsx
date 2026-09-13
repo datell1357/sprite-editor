@@ -109,6 +109,7 @@ export function Timeline({
         fps,
         loop,
         name: clip.name,
+        variant: clip.variant,
         frames: layout,
       });
     } catch (e) {

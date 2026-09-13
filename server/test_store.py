@@ -44,6 +44,11 @@ class StoreTests(unittest.TestCase):
         other = Store(Path(self.temp.name))
         self.assertEqual(other.get("assets", item["id"])["width"], 8)
 
+    def test_processing_metadata_is_validated_and_persisted(self):
+        item=self.store.import_data_url({'name':'pixel','processing':'pixel-unfake','png':'data:image/png;base64,'+base64.b64encode(png()).decode()})
+        self.assertEqual(self.store.get('assets',item['id'])['processing'],'pixel-unfake')
+        with self.assertRaises(ValueError): self.store.add_image(png(),'bad',processing='unsupported')
+
     def test_restart_marks_incomplete_jobs_without_retry(self):
         self.store.put("jobs", {"id": "stopped", "status": "running", "request": {}})
         Jobs(self.store)

@@ -1,6 +1,9 @@
 """One approved reference -> one GPT row -> checked runtime atlas."""
 import base64
 import json
+import uuid
+from PIL import Image
+from .atlas import parse_atlas, publish_images
 
 STATES = {"idle", "walk", "run", "attack", "jump"}
 
@@ -63,3 +66,34 @@ def animation_output(folder, payload):
         raise ValueError("생성된 셀 크기가 요청과 다릅니다.")
     sheet = (folder / "run/sprite-sheet-alpha.png").read_bytes()
     return {"manifest": manifest, "png": "data:image/png;base64," + base64.b64encode(sheet).decode()}
+
+
+def publish_animation_variants(store, folder, payload, output):
+    pixel_images, clips = parse_atlas(output)
+    if output['manifest'].get('curation_applied'):
+        raise ValueError('편집된 run은 자동 원본 쌍으로 가져올 수 없습니다.')
+    frame_manifest = json.loads((folder / 'run/frames/frames-manifest.json').read_text())
+    rows = frame_manifest.get('rows', [])
+    matching = [row for row in rows if row.get('state') == payload['state']]
+    if frame_manifest.get('ok') is not True or len(matching) != 1:
+        raise ValueError('원본 쌍의 프레임 manifest가 올바르지 않습니다.')
+    plain_files = matching[0].get('plain_files')
+    if not isinstance(plain_files, list) or len(plain_files) != len(pixel_images):
+        raise ValueError('정규화 전 프레임이 누락됐습니다. 픽셀 결과로 대체하지 않습니다.')
+    frames_root = (folder / 'run/frames').resolve()
+    plain_images, plain_frames = [], []
+    for index, (relative, (pixel, meta)) in enumerate(zip(plain_files, pixel_images)):
+        if not isinstance(relative, str): raise ValueError('원본 쌍 경로가 올바르지 않습니다.')
+        path = (folder / 'run' / relative).resolve()
+        if not path.is_relative_to(frames_root): raise ValueError('원본 쌍은 run의 frames 안에 있어야 합니다.')
+        with Image.open(path) as image:
+            if image.format != 'PNG' or image.size != pixel.size:
+                raise ValueError('정규화 전후 프레임의 셀 크기가 다릅니다.')
+            image.load(); plain = image.convert('RGBA')
+        parent = str(uuid.uuid4())
+        plain_images.append((plain, {'id':parent, 'name':(meta['name'] + ' · Plain')[:120], 'processing':'plain'}))
+        meta['parentId'] = parent; meta['processing'] = 'pixel-unfake'
+        plain_frames.append({'assetId':parent,'durationMs':clips[0]['frames'][index]['durationMs']})
+    clips[0]['variant'] = 'pixel-unfake'
+    plain_clip = {**clips[0], 'id':str(uuid.uuid4()), 'frames':plain_frames, 'variant':'plain'}
+    return publish_images(store, plain_images + pixel_images, [clips[0], plain_clip])

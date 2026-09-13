@@ -10,6 +10,7 @@ import {
   Redo2,
   Save,
   Download,
+  Columns2,
 } from "lucide-react";
 import type { Asset, Tool } from "../types";
 import { download, loadImage } from "../lib/api";
@@ -21,6 +22,8 @@ export function PixelEditor({
   onSave,
   onError,
   onDirty,
+  canCompare,
+  onCompare,
 }: {
   asset?: Asset;
   color: string;
@@ -28,6 +31,8 @@ export function PixelEditor({
   onSave: (png: string) => Promise<void>;
   onError: (s: string) => void;
   onDirty: (dirty: boolean) => void;
+  canCompare: boolean;
+  onCompare: () => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const history = useRef<ImageData[]>([]),
@@ -147,6 +152,14 @@ export function PixelEditor({
           </span>
         </div>
         <div className="inline">
+          <button
+            disabled={!canCompare || dirty || saving}
+            onClick={onCompare}
+            title="저장된 원본과 비교 (수정 중이면 먼저 저장하세요)"
+          >
+            <Columns2 size={16} />
+            비교
+          </button>
           <button
             className="icon-button"
             aria-label="픽셀 실행 취소"

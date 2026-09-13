@@ -107,6 +107,8 @@ export function validateProject(value: unknown): Project {
         !c.name.trim() ||
         c.name.length > 120 ||
         typeof c.loop !== "boolean" ||
+        (c.variant !== undefined &&
+          !["plain", "pixel-unfake"].includes(c.variant)) ||
         typeof c.fps !== "number" ||
         !Number.isFinite(c.fps) ||
         c.fps < 1 ||
@@ -147,6 +149,8 @@ export function validatePortable(value: unknown): PortableProject {
         typeof a.id !== "string" ||
         typeof a.name !== "string" ||
         typeof a.png !== "string" ||
+        (a.processing !== undefined &&
+          !["plain", "pixel-unfake", "pixel-snapper"].includes(a.processing)) ||
         !a.png.startsWith("data:image/png;base64,"),
     )
   )
