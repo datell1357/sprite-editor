@@ -22,7 +22,11 @@ import { Inspector } from "./components/Inspector";
 import { AtlasImport } from "./components/AtlasImport";
 import { AssetComparison } from "./components/AssetComparison";
 import { MapEditor } from "./components/MapEditor";
-import { api, downloadJSON, pngData } from "./lib/api";
+import { api, download, pngData } from "./lib/api";
+import {
+  PROJECT_FILE_MAX_BYTES,
+  serializeProjectFile,
+} from "./lib/projectFile";
 import { requireTileDimensions } from "./lib/autotile";
 import {
   emptyProject,
@@ -219,14 +223,20 @@ export default function App() {
     try {
       if (assets.length > 256)
         throw new Error("한 프로젝트에 최대 256개 자산을 내보낼 수 있습니다.");
-      const embedded = await Promise.all(
-        assets.map(async (a) => ({ ...a, png: await pngData(a) })),
-      );
-      downloadJSON(`${project.name}.sprite.json`, {
+      const embedded = [];
+      for (const asset of assets) {
+        embedded.push({ ...asset, png: await pngData(asset) });
+      }
+      const text = serializeProjectFile({
         kind: "sprite-editor",
         project,
         assets: embedded,
       });
+      const url = URL.createObjectURL(
+        new Blob([text], { type: "application/json" }),
+      );
+      download(`${project.name}.sprite.json`, url);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
       onError((e as Error).message);
     } finally {
@@ -242,7 +252,7 @@ export default function App() {
       return;
     setBusy(true);
     try {
-      if (file.size > 64 * 1024 * 1024)
+      if (file.size > PROJECT_FILE_MAX_BYTES)
         throw new Error("프로젝트는 64MB 이하여야 합니다.");
       const portable = validatePortable(JSON.parse(await file.text())),
         ids = new Map<string, string>();
