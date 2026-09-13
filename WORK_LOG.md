@@ -26,7 +26,13 @@ Sprite Fusion의 캔버스 중심 UX를 참고해 sprite-gen 생성, Pixel Snapp
   브라우저 24×16 빈 맵→384 배치→무변경 재클릭→undo 0→redo 384 확인.
   undo 후 수정한 프로젝트 이름 유지, 브라우저 오류 미관찰.
 - 다음: 상태·방향 생성 job 연결, Pixel Unfake 비교 variant,
-  autotile, raw/후보 pool import, 실행/취소/장애 경로 확대 검증.
+  autotile, raw/후보 pool import.
+- 작업 수명 보강 완료: 취소 시 bounded process-group 종료, queued 취소의 실행 방지,
+  정상 서버 종료 시 정리, 중복 포트 실행의 기존 job 상태 보존, 요청 형식/프롬프트 정규화.
+- 이전 HEAD 재현: SIGTERM 무시 provider 취소 후 다음 작업은 queued에 남았다.
+  수정 후 실제 로컬 stand-in 및 자식 heartbeat 종료, 다음 job 완료, 취소 PNG 게시 차단 확인.
+  실패 exit/잘못된 PNG/spawn 오류/timeout/종료/대기 취소를 포함한 Python 18개 통과.
+  실제 유료 provider 호출은 하지 않았다.
 - 최종 완료 조건: 주요 기능의 실제 왕복 검증, 오류·취소·복구 처리, 문서와 테스트,
   모든 작업 단위 push. 실제 provider 생성 검증이 없으면 그 제한을 명시한다.
 - 사용자 확인으로 저장소 로컬 작성자 설정 완료. origin main에 push 권한 확인.

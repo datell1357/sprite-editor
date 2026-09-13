@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import signal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -73,12 +74,32 @@ def make_handler(store, jobs):
     return Handler
 
 
+def create_server(root, port=8796):
+    # Bind first: a second launch must not run restart recovery against the
+    # live server's jobs before discovering that the port is already occupied.
+    server = ThreadingHTTPServer(("127.0.0.1", port), BaseHTTPRequestHandler)
+    try:
+        store = Store(root)
+        jobs = Jobs(store)
+        server.RequestHandlerClass = make_handler(store, jobs)
+        return server, jobs
+    except Exception:
+        server.server_close()
+        raise
+
+
 def main():
     root = Path(os.environ.get("SPRITE_EDITOR_DATA", ".data")).resolve()
-    store = Store(root)
-    server = ThreadingHTTPServer(("127.0.0.1", 8796), make_handler(store, Jobs(store)))
+    server, jobs = create_server(root)
+    def stop(_signum, _frame):
+        raise SystemExit(0)
+    signal.signal(signal.SIGTERM, stop)
     print("Sprite Editor API: http://127.0.0.1:8796", flush=True)
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    finally:
+        jobs.close()
+        server.server_close()
 
 
 if __name__ == "__main__":
