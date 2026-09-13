@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 from .jobs import Jobs, capabilities
 from .store import Store
+from .atlas import import_atlas
 
 
 def make_handler(store, jobs):
@@ -55,6 +56,8 @@ def make_handler(store, jobs):
                     raise ValueError("JSON 객체가 필요합니다.")
                 if self.path == "/api/assets":
                     return self.respond(201, store.import_data_url(payload))
+                if self.path == "/api/import-atlas":
+                    return self.respond(201, import_atlas(store, payload))
                 if self.path == "/api/jobs":
                     return self.respond(202, jobs.submit(payload))
                 match = re.fullmatch(r"/api/jobs/([a-f0-9-]{36})/cancel", self.path)

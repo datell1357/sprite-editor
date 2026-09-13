@@ -13,8 +13,14 @@ Sprite Fusion의 캔버스 중심 UX를 참고해 sprite-gen 생성, Pixel Snapp
 - 실제 Pixel Snapper 처리 성공: 1254px 샘플→92×91px 수정본, 원본 유지.
 - 브라우저 검증: 픽셀 수정/undo/redo/수정본, 프레임 추가/재생,
   맵 객체 2개 배치, embedded PNG export 검사, 프로젝트 fixture import 및 reload 유지.
-- 다음: sprite-gen run/manifest 가져오기, 상태·방향 애니메이션 연결,
-  Pixel Unfake 비교 variant, map fill/autotile, 실행/취소/장애 경로 확대 검증.
+- 이번 회차 완료: sprite-gen runtime manifest+PNG 가져오기 API/UI, 이름별 클립,
+  프레임별 ms·반복/one-shot 재생, duration/loop export, 프로젝트 v1→v2 호환 변환.
+- 실물 fixture API 검증: idle 4프레임@4fps, walk 3프레임@8fps. 추출 RGBA·duration 전부 원본과 동일.
+- 관련 자동 검사: 프런트엔드 8개, Python 10개 및 빌드 통과.
+- 브라우저: 가져온 프레임 목록, 클립 생성, 프레임 추가/선택, 375ms 편집, one-shot 종료 확인.
+  네이티브 파일 선택 자동화가 장시간 응답하지 않아 파일 선택부터 완료까지 UI 전체 왕복은 미검증.
+- 다음: 상태·방향 생성 job 연결, Pixel Unfake 비교 variant,
+  map fill/autotile, raw/후보 pool import, 실행/취소/장애 경로 확대 검증.
 - 최종 완료 조건: 주요 기능의 실제 왕복 검증, 오류·취소·복구 처리, 문서와 테스트,
   모든 작업 단위 push. 실제 provider 생성 검증이 없으면 그 제한을 명시한다.
 - 사용자 확인으로 저장소 로컬 작성자 설정 완료. origin main에 push 권한 확인.
@@ -27,6 +33,9 @@ Sprite Fusion의 캔버스 중심 UX를 참고해 sprite-gen 생성, Pixel Snapp
   `CARGO_HOME=/tmp/sprite-editor-work-20260912/.data/toolchain/cargo`
   `RUSTUP_HOME=/tmp/sprite-editor-work-20260912/.data/toolchain/rustup`으로 cargo 실행.
 - `.data` 샘플/생성물, `artifacts` 디자인/QA, `analysis` 원문은 Git 제외.
+- UI 검증은 별도 `localhost:5186` origin으로 실행해 사용자의 `127.0.0.1` 프로젝트 저장값을 보존했다.
+- 파일 선택 CUA 자동화가 여러 차례 오래 지연됐다. 같은 filechooser 호출을 반복하지 말고
+  API/fixture 검사와 브라우저의 파일 선택 외 상호작용으로 나누어 확인한다.
 - 웹 파일 선택 검증은 `/tmp` ASCII fixture로 성공. Downloads 파일은 검사 후 사라져
   최초 import가 실패했으므로 그 실패를 제품 import 실패로 단정하지 않는다.
 

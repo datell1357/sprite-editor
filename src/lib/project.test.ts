@@ -28,7 +28,18 @@ describe("project import", () => {
     expect(() =>
       validatePortable({
         kind: "sprite-editor",
-        project: { ...emptyProject(), sequence: ["missing"] },
+        project: {
+          ...emptyProject(),
+          clips: [
+            {
+              id: "default",
+              name: "idle",
+              fps: 8,
+              loop: true,
+              frames: [{ assetId: "missing", durationMs: 125 }],
+            },
+          ],
+        },
         assets: [],
       }),
     ).toThrow("누락");
@@ -47,12 +58,56 @@ describe("project import", () => {
   it("remaps frame and map references consistently", () => {
     const p = {
       ...emptyProject(),
-      sequence: ["old"],
+      clips: [
+        {
+          id: "default",
+          name: "idle",
+          fps: 8,
+          loop: false,
+          frames: [{ assetId: "old", durationMs: 375 }],
+        },
+      ],
       placements: [{ id: "p", assetId: "old", layerId: "ground", x: 0, y: 0 }],
     };
     const mapped = remapProject(p, new Map([["old", "new"]]));
-    expect(mapped.sequence).toEqual(["new"]);
+    expect(mapped.clips[0].frames).toEqual([
+      { assetId: "new", durationMs: 375 },
+    ]);
+    expect(mapped.clips[0].loop).toBe(false);
     expect(mapped.placements[0].assetId).toBe("new");
-    expect(p.sequence).toEqual(["old"]);
+    expect(p.clips[0].frames[0].assetId).toBe("old");
+  });
+  it("migrates v1 without changing frame order, timing or original input", () => {
+    const old = {
+      ...emptyProject(),
+      version: 1,
+      sequence: ["one", "one", "two"],
+      fps: 4,
+    };
+    const migrated = validateProject(old);
+    expect(migrated.version).toBe(2);
+    expect(migrated.clips[0].frames).toEqual(
+      ["one", "one", "two"].map((assetId) => ({ assetId, durationMs: 250 })),
+    );
+    expect(old.version).toBe(1);
+    expect(
+      validatePortable({
+        kind: "sprite-editor",
+        project: { ...old, sequence: [] },
+        assets: [],
+      }).project.version,
+    ).toBe(2);
+  });
+  it("rejects invalid durations and missing active clips", () => {
+    const p = emptyProject();
+    expect(() => validateProject({ ...p, activeClipId: "absent" })).toThrow();
+    for (const durationMs of [0, -1, Infinity, NaN, 60001]) {
+      expect(() =>
+        validateProject({
+          ...p,
+          clips: [{ ...p.clips[0], frames: [{ assetId: "a", durationMs }] }],
+        }),
+      ).toThrow();
+    }
   });
 });

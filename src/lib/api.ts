@@ -1,4 +1,4 @@
-import type { Asset, Capabilities, Job } from "../types";
+import type { AnimationClip, Asset, Capabilities, Job } from "../types";
 
 async function request<T>(url: string, data?: unknown): Promise<T> {
   const response = await fetch(
@@ -17,6 +17,11 @@ async function request<T>(url: string, data?: unknown): Promise<T> {
   return payload as T;
 }
 export const api = {
+  importAtlas: (manifest: unknown, png: string) =>
+    request<{ assets: Asset[]; clips: AnimationClip[] }>("/api/import-atlas", {
+      manifest,
+      png,
+    }),
   assets: () => request<Asset[]>("/api/assets"),
   jobs: () => request<Job[]>("/api/jobs"),
   status: () => request<Capabilities>("/api/status"),

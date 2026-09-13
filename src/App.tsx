@@ -13,10 +13,13 @@ import { AssetLibrary } from "./components/AssetLibrary";
 import { PixelEditor } from "./components/PixelEditor";
 import { Timeline } from "./components/Timeline";
 import { Inspector } from "./components/Inspector";
+import { AtlasImport } from "./components/AtlasImport";
 import { MapEditor } from "./components/MapEditor";
 import { api, downloadJSON, pngData } from "./lib/api";
 import {
   emptyProject,
+  activeClip,
+  updateClip,
   orderedAssets,
   remapProject,
   validatePortable,
@@ -65,6 +68,8 @@ export default function App() {
   const fileInput = useRef<HTMLInputElement>(null),
     projectInput = useRef<HTMLInputElement>(null),
     dirty = useRef(false);
+  const [atlasOpen, setAtlasOpen] = useState(false);
+  const clip = activeClip(project);
   const selected = assets.find((a) => a.id === selectedId);
   const onError = useCallback((message: string) => setError(message), []);
   const onDirty = useCallback((value: boolean) => {
@@ -342,6 +347,53 @@ export default function App() {
         <div className="main-workspace">
           {mode === "sprite" ? (
             <>
+              <div className="clip-toolbar">
+                <label>
+                  Animation
+                  <select
+                    aria-label="애니메이션 클립"
+                    value={project.activeClipId}
+                    onChange={(e) =>
+                      setProject({ ...project, activeClipId: e.target.value })
+                    }
+                  >
+                    {project.clips.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} · {c.frames.length} frames
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  disabled={!connected || busy || project.clips.length >= 64}
+                  onClick={() => setAtlasOpen(true)}
+                >
+                  sprite-gen 가져오기
+                </button>
+                <button
+                  aria-label="새 애니메이션 클립"
+                  disabled={project.clips.length >= 64}
+                  onClick={() => {
+                    const id = crypto.randomUUID();
+                    setProject({
+                      ...project,
+                      activeClipId: id,
+                      clips: [
+                        ...project.clips,
+                        {
+                          id,
+                          name: `Animation ${project.clips.length + 1}`,
+                          frames: [],
+                          fps: 8,
+                          loop: true,
+                        },
+                      ],
+                    });
+                  }}
+                >
+                  + 클립
+                </button>
+              </div>
               <PixelEditor
                 asset={selected}
                 color={color}
@@ -359,11 +411,11 @@ export default function App() {
               />
               <Timeline
                 assets={assets}
-                sequence={project.sequence}
-                fps={project.fps}
+                key={clip.id}
+                clip={clip}
                 selected={selectedId}
-                onSequence={(sequence) => setProject({ ...project, sequence })}
-                onFps={(fps) => setProject({ ...project, fps })}
+                onClip={(changed) => setProject((p) => updateClip(p, changed))}
+                onSelect={select}
                 onError={onError}
               />
             </>
@@ -390,6 +442,23 @@ export default function App() {
           />
         )}
       </main>
+      {atlasOpen && (
+        <AtlasImport
+          remainingClips={64 - project.clips.length}
+          onClose={() => setAtlasOpen(false)}
+          onImport={(added, clips) => {
+            if (!dirty.current) setSelected(clips[0].frames[0].assetId);
+            setAssets((old) => [...added, ...old]);
+            setProject((p) => ({
+              ...p,
+              clips: [...p.clips, ...clips],
+              activeClipId: clips[0].id,
+            }));
+            setAtlasOpen(false);
+            refresh();
+          }}
+        />
+      )}
       <footer className="statusbar">
         <span>
           <CheckCircle2 size={14} />

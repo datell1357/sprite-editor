@@ -1031,3 +1031,88 @@ canvas {
     transition: none !important;
   }
 }
+
+.clip-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.clip-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-right: auto;
+}
+.clip-toolbar select {
+  max-width: 230px;
+  padding: 7px;
+  font-size: 12px;
+}
+.clip-toolbar button {
+  font-size: 12px;
+}
+.timeline {
+  height: 195px;
+}
+.loop-toggle {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+.frame-duration {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+.frame-duration input {
+  width: 82px;
+  padding: 3px 6px;
+  font-size: 11px;
+}
+.import-dialog {
+  color: var(--ink);
+  padding: 24px;
+  width: 480px;
+  max-width: calc(100vw - 24px);
+  box-shadow: 0 20px 100px #0008;
+}
+.import-dialog::backdrop {
+  background: #0009;
+}
+.import-dialog p {
+  font-size: 13px;
+  line-height: 1.8;
+}
+.import-dialog label {
+  display: block;
+  font-size: 12px;
+  margin: 18px 0;
+}
+.import-dialog input {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+}
+@media (max-width: 600px) {
+  .clip-toolbar {
+    gap: 5px;
+  }
+  .clip-toolbar label {
+    width: 100%;
+  }
+  .clip-toolbar select {
+    flex: 1;
+    max-width: none;
+  }
+  .timeline {
+    height: 185px;
+  }
+}

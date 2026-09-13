@@ -8,47 +8,60 @@ import {
   X,
   Download,
 } from "lucide-react";
-import type { Asset } from "../types";
+import type { AnimationClip, Asset } from "../types";
 import { download, downloadJSON, loadImage } from "../lib/api";
+import { frameAtElapsed } from "../lib/animation";
 
 export function Timeline({
   assets,
-  sequence,
-  fps,
+  clip,
   selected,
-  onSequence,
-  onFps,
+  onClip,
+  onSelect,
   onError,
 }: {
   assets: Asset[];
-  sequence: string[];
-  fps: number;
+  clip: AnimationClip;
   selected?: string;
-  onSequence: (ids: string[]) => void;
-  onFps: (v: number) => void;
+  onClip: (clip: AnimationClip) => void;
+  onSelect: (id: string) => void;
   onError: (s: string) => void;
 }) {
   const [playing, setPlaying] = useState(false),
     [frame, setFrame] = useState(0);
+  const { fps, frames: clipFrames, loop } = clip;
+  const sequence = clipFrames.map((f) => f.assetId);
   useEffect(() => {
-    if (!playing || !sequence.length) return;
-    const timer = setInterval(
-      () => setFrame((f) => (f + 1) % sequence.length),
-      1000 / fps,
-    );
-    return () => clearInterval(timer);
-  }, [playing, fps, sequence.length]);
+    if (!playing || !clipFrames.length) return;
+    const offset = clipFrames
+      .slice(0, frame)
+      .reduce((sum, f) => sum + f.durationMs, 0);
+    const start = performance.now();
+    let raf = 0;
+    const tick = () => {
+      const position = frameAtElapsed(
+        clipFrames,
+        performance.now() - start + offset,
+        loop,
+      );
+      setFrame(position.index);
+      if (position.ended) setPlaying(false);
+      else raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, clipFrames, loop]);
   useEffect(() => {
-    setFrame(0);
+    setFrame((f) => Math.min(f, Math.max(0, clipFrames.length - 1)));
     setPlaying(false);
-  }, [sequence]);
+  }, [clipFrames]);
   const current = assets.find((a) => a.id === sequence[frame]);
   function move(index: number, delta: number) {
-    const next = [...sequence],
+    const next = [...clipFrames],
       target = index + delta;
     if (target < 0 || target >= next.length) return;
     [next[index], next[target]] = [next[target], next[index]];
-    onSequence(next);
+    onClip({ ...clip, frames: next });
   }
   async function exportAtlas() {
     try {
@@ -85,7 +98,7 @@ export function Timeline({
           h,
           offsetX,
           offsetY,
-          duration: 1 / fps,
+          duration: clipFrames[i].durationMs / 1000,
           assetId: sequence[i],
         };
       });
@@ -94,7 +107,8 @@ export function Timeline({
         version: 1,
         image: "sprite-atlas.png",
         fps,
-        loop: true,
+        loop,
+        name: clip.name,
         frames: layout,
       });
     } catch (e) {
@@ -108,16 +122,34 @@ export function Timeline({
           Timeline <span>{sequence.length} frames</span>
         </h2>
         <div className="inline">
+          <label className="loop-toggle">
+            <input
+              type="checkbox"
+              checked={loop}
+              onChange={(e) => onClip({ ...clip, loop: e.target.checked })}
+            />
+            반복
+          </label>
           <label className="fps">
             <input
               aria-label="애니메이션 FPS"
               type="number"
               min={1}
               max={60}
+              step="any"
+              title="FPS 변경은 모든 프레임 시간을 균등하게 설정합니다"
               value={fps}
               onChange={(e) => {
                 const v = Number(e.target.value);
-                if (Number.isInteger(v) && v >= 1 && v <= 60) onFps(v);
+                if (Number.isFinite(v) && v >= 1 && v <= 60)
+                  onClip({
+                    ...clip,
+                    fps: v,
+                    frames: clipFrames.map((f) => ({
+                      ...f,
+                      durationMs: 1000 / v,
+                    })),
+                  });
               }}
             />{" "}
             fps
@@ -136,7 +168,10 @@ export function Timeline({
           className="play"
           disabled={!sequence.length}
           aria-label={playing ? "일시정지" : "재생"}
-          onClick={() => setPlaying(!playing)}
+          onClick={() => {
+            if (!playing && frame === clipFrames.length - 1) setFrame(0);
+            setPlaying(!playing);
+          }}
         >
           {playing ? <Pause /> : <Play />}
         </button>
@@ -156,6 +191,7 @@ export function Timeline({
                 onClick={() => {
                   setPlaying(false);
                   setFrame(i);
+                  onSelect(id);
                 }}
               >
                 <img
@@ -174,7 +210,12 @@ export function Timeline({
                 </button>
                 <button
                   aria-label={`프레임 ${i + 1} 제거`}
-                  onClick={() => onSequence(sequence.filter((_, n) => n !== i))}
+                  onClick={() =>
+                    onClip({
+                      ...clip,
+                      frames: clipFrames.filter((_, n) => n !== i),
+                    })
+                  }
                 >
                   <X size={13} />
                 </button>
@@ -191,7 +232,16 @@ export function Timeline({
           <button
             className="add-frame"
             disabled={!selected || sequence.length >= 256}
-            onClick={() => selected && onSequence([...sequence, selected])}
+            onClick={() =>
+              selected &&
+              onClip({
+                ...clip,
+                frames: [
+                  ...clipFrames,
+                  { assetId: selected, durationMs: 1000 / fps },
+                ],
+              })
+            }
             title="선택한 자산을 프레임으로 추가"
             aria-label="선택한 자산을 프레임으로 추가"
           >
@@ -206,6 +256,34 @@ export function Timeline({
           )}
         </div>
       </div>
+      {clipFrames[frame] && (
+        <label className="frame-duration">
+          프레임 {frame + 1} 시간{" "}
+          <input
+            aria-label="프레임 시간 ms"
+            type="number"
+            step="any"
+            min={1}
+            max={60000}
+            value={clipFrames[frame].durationMs}
+            onChange={(e) => {
+              const durationMs = Number(e.target.value);
+              if (
+                Number.isFinite(durationMs) &&
+                durationMs > 0 &&
+                durationMs <= 60000
+              )
+                onClip({
+                  ...clip,
+                  frames: clipFrames.map((f, i) =>
+                    i === frame ? { ...f, durationMs } : f,
+                  ),
+                });
+            }}
+          />{" "}
+          ms
+        </label>
+      )}
     </section>
   );
 }

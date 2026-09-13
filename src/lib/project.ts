@@ -1,7 +1,7 @@
-import type { Asset, PortableProject, Project } from "../types";
+import type { AnimationClip, Asset, PortableProject, Project } from "../types";
 
 export const emptyProject = (): Project => ({
-  version: 1,
+  version: 2,
   name: "Untitled world",
   tileSize: 32,
   mapWidth: 24,
@@ -11,21 +11,51 @@ export const emptyProject = (): Project => ({
     { id: "objects", name: "Objects", visible: true, collider: false },
   ],
   placements: [],
-  sequence: [],
-  fps: 8,
+  clips: [{ id: "default", name: "Animation", frames: [], fps: 8, loop: true }],
+  activeClipId: "default",
 });
 
 export function validateProject(value: unknown): Project {
   if (!value || typeof value !== "object")
     throw new Error("프로젝트 파일이 올바르지 않습니다.");
-  const p = value as Project;
-  if (p.version !== 1 || typeof p.name !== "string" || p.name.length > 120)
+  let p = value as Project;
+  // A v1 file is normalized in memory. Frame order and timing are preserved.
+  if ((value as { version?: unknown }).version === 1) {
+    const old = value as { sequence?: unknown; fps?: unknown };
+    if (
+      !Array.isArray(old.sequence) ||
+      old.sequence.some((id) => typeof id !== "string") ||
+      typeof old.fps !== "number" ||
+      !Number.isFinite(old.fps) ||
+      old.fps < 1 ||
+      old.fps > 60
+    )
+      throw new Error("이전 프로젝트의 프레임 정보가 올바르지 않습니다.");
+    const { sequence, fps, ...rest } = value as Record<string, unknown>;
+    p = {
+      ...rest,
+      version: 2,
+      activeClipId: "default",
+      clips: [
+        {
+          id: "default",
+          name: "Animation",
+          frames: old.sequence.map((assetId) => ({
+            assetId,
+            durationMs: 1000 / (fps as number),
+          })),
+          fps,
+          loop: true,
+        },
+      ],
+    } as Project;
+  }
+  if (p.version !== 2 || typeof p.name !== "string" || p.name.length > 120)
     throw new Error("지원하지 않는 프로젝트입니다.");
   for (const [v, max] of [
     [p.tileSize, 128],
     [p.mapWidth, 128],
     [p.mapHeight, 128],
-    [p.fps, 60],
   ])
     if (!Number.isInteger(v) || v < 1 || v > max)
       throw new Error("프로젝트 크기 또는 재생 속도가 올바르지 않습니다.");
@@ -66,9 +96,35 @@ export function validateProject(value: unknown): Project {
   )
     throw new Error("맵 배치 정보가 올바르지 않습니다.");
   if (
-    !Array.isArray(p.sequence) ||
-    p.sequence.length > 256 ||
-    p.sequence.some((s) => typeof s !== "string")
+    !Array.isArray(p.clips) ||
+    p.clips.length < 1 ||
+    p.clips.length > 64 ||
+    p.clips.some(
+      (c) =>
+        !c ||
+        typeof c.id !== "string" ||
+        typeof c.name !== "string" ||
+        !c.name.trim() ||
+        c.name.length > 120 ||
+        typeof c.loop !== "boolean" ||
+        typeof c.fps !== "number" ||
+        !Number.isFinite(c.fps) ||
+        c.fps < 1 ||
+        c.fps > 60 ||
+        !Array.isArray(c.frames) ||
+        c.frames.length > 256 ||
+        c.frames.some(
+          (f) =>
+            !f ||
+            typeof f.assetId !== "string" ||
+            typeof f.durationMs !== "number" ||
+            !Number.isFinite(f.durationMs) ||
+            f.durationMs <= 0 ||
+            f.durationMs > 60000,
+        ),
+    ) ||
+    new Set(p.clips.map((c) => c.id)).size !== p.clips.length ||
+    !p.clips.some((c) => c.id === p.activeClipId)
   )
     throw new Error("프레임 정보가 올바르지 않습니다.");
   return p;
@@ -83,7 +139,7 @@ export function validatePortable(value: unknown): PortableProject {
     p.assets.length > 256
   )
     throw new Error("Sprite Editor 프로젝트가 아닙니다.");
-  validateProject(p.project);
+  const project = validateProject(p.project);
   if (
     p.assets.some(
       (a) =>
@@ -98,13 +154,14 @@ export function validatePortable(value: unknown): PortableProject {
   const ids = new Set(p.assets.map((a) => a.id));
   if (
     ids.size !== p.assets.length ||
-    [...p.project.sequence, ...p.project.placements.map((t) => t.assetId)].some(
-      (id) => !ids.has(id),
-    )
+    [
+      ...project.clips.flatMap((c) => c.frames.map((f) => f.assetId)),
+      ...project.placements.map((t) => t.assetId),
+    ].some((id) => !ids.has(id))
   )
     throw new Error("프로젝트에서 참조한 자산이 누락됐습니다.");
   orderedAssets(p.assets);
-  return p;
+  return { ...p, project };
 }
 
 export function orderedAssets<
@@ -135,7 +192,10 @@ export function remapProject(
 ): Project {
   return {
     ...project,
-    sequence: project.sequence.map((id) => ids.get(id)!),
+    clips: project.clips.map((c) => ({
+      ...c,
+      frames: c.frames.map((f) => ({ ...f, assetId: ids.get(f.assetId)! })),
+    })),
     placements: project.placements.map((t) => ({
       ...t,
       assetId: ids.get(t.assetId)!,
@@ -145,8 +205,21 @@ export function remapProject(
 
 export function usedAssets(project: Project, assets: Asset[]) {
   const ids = new Set([
-    ...project.sequence,
+    ...project.clips.flatMap((c) => c.frames.map((f) => f.assetId)),
     ...project.placements.map((t) => t.assetId),
   ]);
   return assets.filter((a) => ids.has(a.id));
+}
+
+export function activeClip(project: Project): AnimationClip {
+  const clip = project.clips.find((c) => c.id === project.activeClipId);
+  if (!clip) throw new Error("현재 클립을 찾을 수 없습니다.");
+  return clip;
+}
+
+export function updateClip(project: Project, clip: AnimationClip): Project {
+  return {
+    ...project,
+    clips: project.clips.map((c) => (c.id === clip.id ? clip : c)),
+  };
 }

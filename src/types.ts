@@ -34,15 +34,26 @@ export interface Layer {
   collider: boolean;
 }
 export interface Project {
-  version: 1;
+  version: 2;
   name: string;
   tileSize: number;
   mapWidth: number;
   mapHeight: number;
   layers: Layer[];
   placements: Placement[];
-  sequence: string[];
+  clips: AnimationClip[];
+  activeClipId: string;
+}
+export interface ClipFrame {
+  assetId: string;
+  durationMs: number;
+}
+export interface AnimationClip {
+  id: string;
+  name: string;
+  frames: ClipFrame[];
   fps: number;
+  loop: boolean;
 }
 export interface PortableProject {
   kind: "sprite-editor";
