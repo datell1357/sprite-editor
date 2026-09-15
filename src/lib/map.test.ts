@@ -11,6 +11,8 @@ const tile = (
 ): Placement => ({ id: `${layerId}:${x}:${y}`, x, y, assetId, layerId });
 const map = (placements: Placement[] = []): Project => ({
   ...emptyProject(),
+  // Two grid layers keep the original cross-layer fill regression meaningful.
+  layers: emptyProject().layers.map((l) => ({ ...l, kind: "tile" })),
   mapWidth: 5,
   mapHeight: 3,
   placements,

@@ -137,7 +137,7 @@ describe("project import", () => {
       fps: 4,
     };
     const migrated = validateProject(old);
-    expect(migrated.version).toBe(2);
+    expect(migrated.version).toBe(3);
     expect(migrated.clips[0].frames).toEqual(
       ["one", "one", "two"].map((assetId) => ({ assetId, durationMs: 250 })),
     );
@@ -148,7 +148,7 @@ describe("project import", () => {
         project: { ...old, sequence: [] },
         assets: [],
       }).project.version,
-    ).toBe(2);
+    ).toBe(3);
   });
   it("rejects invalid durations and missing active clips", () => {
     const p = emptyProject();

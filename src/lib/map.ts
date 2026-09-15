@@ -21,7 +21,9 @@ export function fillRegion(
 ): Placement[] {
   if (
     !inMap(project, x, y) ||
-    !project.layers.some((l) => l.id === layerId && l.visible)
+    !project.layers.some(
+      (l) => l.id === layerId && l.visible && l.kind === "tile",
+    )
   )
     return project.placements;
   const cells = new Map(
@@ -55,7 +57,7 @@ export function fillRegion(
   const retained = project.placements.filter(
     (p) => p.layerId !== layerId || !region.has(p.y * project.mapWidth + p.x),
   );
-  if (retained.length + region.size > 20000)
+  if (retained.length + region.size + project.objects.length > 20000)
     throw new Error("맵 배치는 최대 20,000개까지 저장할 수 있습니다.");
   return [
     ...retained,
@@ -78,7 +80,9 @@ export function paintCell(
 ): Placement[] {
   if (
     !inMap(project, x, y) ||
-    !project.layers.some((l) => l.id === layerId && l.visible)
+    !project.layers.some(
+      (l) => l.id === layerId && l.visible && l.kind === "tile",
+    )
   )
     return project.placements;
   const existing = project.placements.filter(
@@ -93,7 +97,7 @@ export function paintCell(
     (p) => !(p.layerId === layerId && p.x === x && p.y === y),
   );
   if (!assetId) return rest;
-  if (rest.length >= 20000)
+  if (rest.length + project.objects.length >= 20000)
     throw new Error("맵 배치는 최대 20,000개까지 저장할 수 있습니다.");
   return [...rest, { id: crypto.randomUUID(), assetId, layerId, x, y }];
 }

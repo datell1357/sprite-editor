@@ -6,16 +6,29 @@ import {
 } from "./autotile";
 
 export const emptyProject = (): Project => ({
-  version: 2,
+  version: 3,
   name: "Untitled world",
   tileSize: 32,
   mapWidth: 24,
   mapHeight: 16,
   layers: [
-    { id: "ground", name: "Ground", visible: true, collider: false },
-    { id: "objects", name: "Objects", visible: true, collider: false },
+    {
+      id: "ground",
+      name: "Ground",
+      kind: "tile",
+      visible: true,
+      collider: false,
+    },
+    {
+      id: "objects",
+      name: "Objects",
+      kind: "object",
+      visible: true,
+      collider: false,
+    },
   ],
   placements: [],
+  objects: [],
   clips: [{ id: "default", name: "Animation", frames: [], fps: 8, loop: true }],
   activeClipId: "default",
 });
@@ -53,9 +66,19 @@ export function validateProject(value: unknown): Project {
           loop: true,
         },
       ],
-    } as Project;
+    } as unknown as Project;
   }
-  if (p.version !== 2 || typeof p.name !== "string" || p.name.length > 120)
+  // Legacy layers all used cell coordinates with native-size bottom-centre
+  // rendering, even if named Objects. Preserve that geometry without guessing.
+  if ((p as { version: number }).version === 2 && Array.isArray(p.layers)) {
+    p = {
+      ...p,
+      version: 3,
+      objects: [],
+      layers: p.layers.map((l) => (l ? { ...l, kind: "tile" } : l)),
+    };
+  }
+  if (p.version !== 3 || typeof p.name !== "string" || p.name.length > 120)
     throw new Error("지원하지 않는 프로젝트입니다.");
   for (const [v, max] of [
     [p.tileSize, 128],
@@ -75,6 +98,7 @@ export function validateProject(value: unknown): Project {
         !l ||
         typeof l.id !== "string" ||
         typeof l.name !== "string" ||
+        !["tile", "object"].includes(l.kind) ||
         typeof l.visible !== "boolean" ||
         typeof l.collider !== "boolean",
     )
@@ -83,7 +107,11 @@ export function validateProject(value: unknown): Project {
   if (new Set(p.layers.map((l) => l.id)).size !== p.layers.length)
     throw new Error("레이어 ID가 중복됩니다.");
   if (
-    p.layers.some((l) => l.autotile !== undefined && !validAutotile(l.autotile))
+    p.layers.some(
+      (l) =>
+        l.autotile !== undefined &&
+        (l.kind !== "tile" || !validAutotile(l.autotile)),
+    )
   )
     throw new Error("오토타일 규칙이 올바르지 않습니다.");
   if (
@@ -94,7 +122,7 @@ export function validateProject(value: unknown): Project {
         !t ||
         typeof t.id !== "string" ||
         typeof t.assetId !== "string" ||
-        !p.layers.some((l) => l.id === t.layerId) ||
+        !p.layers.some((l) => l.id === t.layerId && l.kind === "tile") ||
         !Number.isInteger(t.x) ||
         !Number.isInteger(t.y) ||
         t.x < 0 ||
@@ -104,6 +132,37 @@ export function validateProject(value: unknown): Project {
     )
   )
     throw new Error("맵 배치 정보가 올바르지 않습니다.");
+  if (
+    !Array.isArray(p.objects) ||
+    p.objects.length + p.placements.length > 20000 ||
+    p.objects.some(
+      (o) =>
+        !o ||
+        typeof o.id !== "string" ||
+        !o.id ||
+        typeof o.assetId !== "string" ||
+        !o.assetId ||
+        !p.layers.some((l) => l.id === o.layerId && l.kind === "object") ||
+        !Number.isInteger(o.x) ||
+        !Number.isInteger(o.y) ||
+        o.x < 0 ||
+        o.y < 0 ||
+        o.x > p.mapWidth * p.tileSize ||
+        o.y > p.mapHeight * p.tileSize ||
+        !Number.isFinite(o.pivotX) ||
+        !Number.isFinite(o.pivotY) ||
+        o.pivotX < 0 ||
+        o.pivotX > 1 ||
+        o.pivotY < 0 ||
+        o.pivotY > 1 ||
+        !Number.isInteger(o.z) ||
+        o.z < -10000 ||
+        o.z > 10000 ||
+        typeof o.collider !== "boolean",
+    ) ||
+    new Set(p.objects.map((o) => o.id)).size !== p.objects.length
+  )
+    throw new Error("객체 위치·피벗·레이어 정보가 올바르지 않습니다.");
   if (
     !Array.isArray(p.clips) ||
     p.clips.length < 1 ||
@@ -174,6 +233,7 @@ export function validatePortable(value: unknown): PortableProject {
         [...c.frames, ...(c.candidates || [])].map((f) => f.assetId),
       ),
       ...project.placements.map((t) => t.assetId),
+      ...project.objects.map((o) => o.assetId),
       ...autotileAssets(project),
     ].some((id) => !ids.has(id))
   )
@@ -241,6 +301,10 @@ export function remapProject(
       ...t,
       assetId: ids.get(t.assetId)!,
     })),
+    objects: project.objects.map((o) => ({
+      ...o,
+      assetId: ids.get(o.assetId)!,
+    })),
   };
 }
 
@@ -250,6 +314,7 @@ export function usedAssets(project: Project, assets: Asset[]) {
       [...c.frames, ...(c.candidates || [])].map((f) => f.assetId),
     ),
     ...project.placements.map((t) => t.assetId),
+    ...project.objects.map((o) => o.assetId),
     ...autotileAssets(project),
   ]);
   return assets.filter((a) => ids.has(a.id));

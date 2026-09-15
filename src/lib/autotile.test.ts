@@ -14,6 +14,7 @@ import type { Project, Asset } from "../types";
 
 function fixture(): Project {
   const p = emptyProject();
+  p.layers[1].kind = "tile";
   p.layers[0].autotile = {
     defaultAssetId: "inside",
     rules: [

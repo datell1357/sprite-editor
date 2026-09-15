@@ -18,6 +18,14 @@ import { download, loadImage } from "../lib/api";
 import { fillRegion, paintCell } from "../lib/map";
 import { resolveAutotiles, requireTileDimensions } from "../lib/autotile";
 import { AutotileEditor } from "./AutotileEditor";
+import { MapObjectProperties } from "./MapObjectProperties";
+import {
+  hitObject,
+  mapScene,
+  objectPosition,
+  placeObject,
+  updateObject,
+} from "../lib/mapObjects";
 
 export function MapEditor({
   project,
@@ -26,6 +34,7 @@ export function MapEditor({
   onChange,
   onError,
   onSelect,
+  onEdit,
 }: {
   project: Project;
   assets: Asset[];
@@ -33,6 +42,7 @@ export function MapEditor({
   onChange: (p: Project) => void;
   onError: (s: string) => void;
   onSelect: (id: string) => void;
+  onEdit: (id: string) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null),
     images = useRef(new Map<string, HTMLImageElement>());
@@ -42,12 +52,36 @@ export function MapEditor({
   const [scale, setScale] = useState(1),
     drawing = useRef(false),
     visited = useRef(new Set<string>());
-  const previous = useRef<Pick<Project, "placements" | "layers">[]>([]),
-    next = useRef<Pick<Project, "placements" | "layers">[]>([]);
+  const previous = useRef<Pick<Project, "placements" | "objects" | "layers">[]>(
+      [],
+    ),
+    next = useRef<Pick<Project, "placements" | "objects" | "layers">[]>([]);
   const working = useRef(project),
     lastPublished = useRef(project),
     strokeRecorded = useRef(false);
   const [ruleLayer, setRuleLayer] = useState<string>();
+  const [selectedObjectId, setSelectedObject] = useState<string>();
+  const [snap, setSnap] = useState(false),
+    [exporting, setExporting] = useState(false);
+  const drag = useRef<{ id: string; offsetX: number; offsetY: number } | null>(
+    null,
+  );
+  const activeLayer =
+    project.layers.find((l) => l.id === layerId) || project.layers[0];
+  const selectedObject = project.objects.find(
+    (o) =>
+      o.id === selectedObjectId && o.layerId === layerId && activeLayer.visible,
+  );
+  const scene = useMemo(
+    () => mapScene(project, assets),
+    [
+      project.placements,
+      project.objects,
+      project.layers,
+      project.tileSize,
+      assets,
+    ],
+  );
   const resolved = useMemo(
     () => resolveAutotiles(project),
     [project.placements, project.layers],
@@ -56,6 +90,7 @@ export function MapEditor({
     const last = lastPublished.current;
     if (
       project.placements !== last.placements ||
+      project.objects !== last.objects ||
       project.layers !== last.layers ||
       project.mapWidth !== last.mapWidth ||
       project.mapHeight !== last.mapHeight ||
@@ -64,6 +99,7 @@ export function MapEditor({
       previous.current = [];
       next.current = [];
       drawing.current = false;
+      drag.current = null;
       bump((v) => v + 1);
     }
     working.current = project;
@@ -92,24 +128,19 @@ export function MapEditor({
     if (!project.layers.some((l) => l.id === layerId))
       setLayer(project.layers[0].id);
   }, [project.layers, layerId]);
-  function render(context: CanvasRenderingContext2D, grid: boolean) {
-    const w = project.mapWidth * project.tileSize,
-      h = project.mapHeight * project.tileSize;
+  function render(
+    context: CanvasRenderingContext2D,
+    grid: boolean,
+    snapshot = project,
+    items = scene.draws,
+  ) {
+    const w = snapshot.mapWidth * snapshot.tileSize,
+      h = snapshot.mapHeight * snapshot.tileSize;
     context.clearRect(0, 0, w, h);
     context.imageSmoothingEnabled = false;
-    for (const layer of project.layers) {
-      if (!layer.visible) continue;
-      for (const p of resolved.filter((p) => p.layerId === layer.id)) {
-        const image = images.current.get(p.assetId);
-        if (!image) continue;
-        // Objects keep their native dimensions; tile coordinates anchor at bottom centre.
-        context.drawImage(
-          image,
-          p.x * project.tileSize +
-            Math.floor((project.tileSize - image.width) / 2),
-          (p.y + 1) * project.tileSize - image.height,
-        );
-      }
+    for (const item of items) {
+      const image = images.current.get(item.assetId);
+      if (image) context.drawImage(image, item.x, item.y);
     }
     if (grid) {
       context.strokeStyle = "#ffffff12";
@@ -124,18 +155,119 @@ export function MapEditor({
         context.lineTo(w, y + 0.5);
       }
       context.stroke();
+      const bounds = items.find(
+        (d) => d.kind === "object" && d.id === selectedObjectId,
+      );
+      if (bounds && selectedObject) {
+        context.strokeStyle = "#b8e986";
+        context.strokeRect(
+          bounds.x + 0.5,
+          bounds.y + 0.5,
+          bounds.width - 1,
+          bounds.height - 1,
+        );
+        context.beginPath();
+        context.moveTo(selectedObject.x - 5, selectedObject.y + 0.5);
+        context.lineTo(selectedObject.x + 5, selectedObject.y + 0.5);
+        context.moveTo(selectedObject.x + 0.5, selectedObject.y - 5);
+        context.lineTo(selectedObject.x + 0.5, selectedObject.y + 5);
+        context.stroke();
+      }
     }
   }
   useEffect(() => {
     if (canvas.current) render(canvas.current.getContext("2d")!, true);
-  }, [project, revision]);
+  }, [project, scene, revision, selectedObjectId]);
   function record() {
     previous.current.push({
       placements: working.current.placements,
+      objects: working.current.objects,
       layers: working.current.layers,
     });
     if (previous.current.length > 30) previous.current.shift();
     next.current = [];
+  }
+  function commit(updated: Project) {
+    if (updated === working.current) return;
+    record();
+    publish(updated);
+  }
+  function point(
+    e:
+      | React.PointerEvent<HTMLCanvasElement>
+      | React.MouseEvent<HTMLCanvasElement>,
+  ) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return {
+      x:
+        ((e.clientX - rect.left) / rect.width) *
+        project.mapWidth *
+        project.tileSize,
+      y:
+        ((e.clientY - rect.top) / rect.height) *
+        project.mapHeight *
+        project.tileSize,
+    };
+  }
+  function objectDown(e: React.PointerEvent<HTMLCanvasElement>) {
+    const p = point(e),
+      current = working.current;
+    const hit = hitObject(mapScene(current, assets).draws, layerId, p.x, p.y);
+    try {
+      if (tool === "place" && selected) {
+        const position = objectPosition(current, p.x, p.y, snap);
+        const updated = placeObject(
+          current,
+          layerId,
+          selected,
+          position.x,
+          position.y,
+        );
+        commit(updated);
+        setSelectedObject(updated.objects.at(-1)?.id);
+      } else if (tool === "erase" && hit) {
+        commit({
+          ...current,
+          objects: current.objects.filter((o) => o.id !== hit.id),
+        });
+        setSelectedObject(undefined);
+      } else if (tool === "select") {
+        setSelectedObject(hit?.id);
+        if (hit) {
+          const object = current.objects.find((o) => o.id === hit.id)!;
+          onSelect(object.assetId);
+          drag.current = {
+            id: object.id,
+            offsetX: p.x - object.x,
+            offsetY: p.y - object.y,
+          };
+        }
+      }
+    } catch (error) {
+      onError((error as Error).message);
+    }
+  }
+  function objectMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (!drag.current || !drawing.current) return;
+    const current = working.current,
+      object = current.objects.find((o) => o.id === drag.current!.id);
+    if (!object) return;
+    const p = point(e),
+      updated = updateObject(current, {
+        ...object,
+        ...objectPosition(
+          current,
+          p.x - drag.current.offsetX,
+          p.y - drag.current.offsetY,
+          snap,
+        ),
+      });
+    if (updated === current) return;
+    if (!strokeRecorded.current) {
+      record();
+      strokeRecorded.current = true;
+    }
+    publish(updated);
   }
   function paint(e: React.PointerEvent<HTMLCanvasElement>) {
     if (
@@ -144,6 +276,12 @@ export function MapEditor({
     )
       return;
     const current = working.current;
+    if (
+      !current.layers.some(
+        (l) => l.id === layerId && l.kind === "tile" && l.visible,
+      )
+    )
+      return;
     const rect = e.currentTarget.getBoundingClientRect(),
       x = Math.floor(((e.clientX - rect.left) / rect.width) * project.mapWidth),
       y = Math.floor(
@@ -194,21 +332,41 @@ export function MapEditor({
     if (p) {
       to.push({
         placements: working.current.placements,
+        objects: working.current.objects,
         layers: working.current.layers,
       });
       publish({
         ...working.current,
         placements: p.placements,
+        objects: p.objects,
         layers: p.layers,
       });
     }
   }
-  function exportMap() {
-    const c = document.createElement("canvas");
-    c.width = project.mapWidth * project.tileSize;
-    c.height = project.mapHeight * project.tileSize;
-    render(c.getContext("2d")!, false);
-    download(`${project.name}-map.png`, c.toDataURL());
+  async function exportMap() {
+    setExporting(true);
+    try {
+      const snapshot = working.current,
+        output = mapScene(snapshot, assets);
+      if (output.missing.length)
+        throw new Error("맵에서 참조한 자산이 누락됐습니다.");
+      for (const id of new Set(output.draws.map((d) => d.assetId))) {
+        if (!images.current.has(id))
+          images.current.set(
+            id,
+            await loadImage(assets.find((a) => a.id === id)!.url),
+          );
+      }
+      const c = document.createElement("canvas");
+      c.width = snapshot.mapWidth * snapshot.tileSize;
+      c.height = snapshot.mapHeight * snapshot.tileSize;
+      render(c.getContext("2d")!, false, snapshot, output.draws);
+      download(`${snapshot.name}-map.png`, c.toDataURL());
+    } catch (error) {
+      onError((error as Error).message);
+    } finally {
+      setExporting(false);
+    }
   }
   return (
     <section className="map-editor panel">
@@ -217,7 +375,8 @@ export function MapEditor({
           <h2>{project.name}</h2>
           <span>
             {project.mapWidth} × {project.mapHeight} tiles · {project.tileSize}
-            px · {project.placements.length} placements
+            px · {project.placements.length} tiles · {project.objects.length}{" "}
+            objects
           </span>
         </div>
         <div className="inline">
@@ -237,7 +396,7 @@ export function MapEditor({
           >
             <Redo2 size={16} />
           </button>
-          <button onClick={exportMap}>
+          <button onClick={exportMap} disabled={exporting}>
             <Download size={16} />
             PNG
           </button>
@@ -246,7 +405,7 @@ export function MapEditor({
       <div className="map-toolbar">
         <button
           className={tool === "fill" ? "active" : ""}
-          disabled={!selected}
+          disabled={!selected || activeLayer.kind === "object"}
           onClick={() => setTool("fill")}
           title="선택한 레이어에서 연결된 같은 자산 또는 빈 영역 채우기"
         >
@@ -274,6 +433,16 @@ export function MapEditor({
           <MousePointer2 size={16} />
           선택
         </button>
+        {activeLayer.kind === "object" && (
+          <label className="check-field">
+            <input
+              type="checkbox"
+              checked={snap}
+              onChange={(e) => setSnap(e.target.checked)}
+            />
+            격자 스냅
+          </label>
+        )}
         <label>
           Zoom
           <select
@@ -287,7 +456,11 @@ export function MapEditor({
             ))}
           </select>
         </label>
-        <span className="hint">선택 도구로 배치된 자산을 고르세요.</span>
+        <span className="hint">
+          {activeLayer.kind === "object"
+            ? "선택 후 드래그로 이동 · 더블클릭으로 스프라이트 편집"
+            : "선택 도구로 배치된 자산을 고르세요."}
+        </span>
       </div>
       <div className="map-viewport checker">
         <canvas
@@ -304,95 +477,141 @@ export function MapEditor({
             if (!project.layers.find((l) => l.id === layerId)?.visible) return;
             strokeRecorded.current = false;
             visited.current.clear();
+            drag.current = null;
             drawing.current = true;
             e.currentTarget.setPointerCapture(e.pointerId);
-            paint(e);
+            if (activeLayer.kind === "object") objectDown(e);
+            else paint(e);
             if (tool === "fill") drawing.current = false;
           }}
-          onPointerMove={paint}
+          onPointerMove={(e) =>
+            activeLayer.kind === "object" ? objectMove(e) : paint(e)
+          }
           onPointerUp={() => {
             drawing.current = false;
+            drag.current = null;
           }}
           onPointerCancel={() => {
             drawing.current = false;
+            drag.current = null;
+          }}
+          onDoubleClick={(e) => {
+            if (tool !== "select" || activeLayer.kind !== "object") return;
+            const p = point(e),
+              hit = hitObject(scene.draws, layerId, p.x, p.y);
+            if (hit) onEdit(hit.assetId);
           }}
         />
       </div>
-      <div className="layers">
-        <div className="section-title">
-          <h2>Layers</h2>
-          <button
-            disabled={project.layers.length >= 32}
-            onClick={() => {
-              record();
-              const id = crypto.randomUUID();
-              publish({
-                ...project,
-                layers: [
-                  ...project.layers,
-                  {
-                    id,
-                    name: `Layer ${project.layers.length + 1}`,
-                    visible: true,
-                    collider: false,
-                  },
-                ],
-              });
-              setLayer(id);
-            }}
-          >
-            <Plus size={16} />
-            레이어
-          </button>
-        </div>
-        {project.layers.map((l) => (
-          <div
-            className={`layer ${l.id === layerId ? "active" : ""}`}
-            key={l.id}
-          >
-            <button
-              aria-label={`${l.name} 표시 전환`}
-              onClick={() => {
-                record();
-                publish({
-                  ...project,
-                  layers: project.layers.map((a) =>
-                    a.id === l.id ? { ...a, visible: !a.visible } : a,
-                  ),
-                });
-              }}
-            >
-              {l.visible ? <Eye size={16} /> : <EyeOff size={16} />}
-            </button>
-            <button className="layer-name" onClick={() => setLayer(l.id)}>
-              {l.name}
-              {l.autotile ? " · Auto" : ""}
-            </button>
-            <button
-              aria-label={`${l.name} 오토타일 설정`}
-              title="오토타일 설정"
-              onClick={() => setRuleLayer(l.id)}
-            >
-              <Settings2 size={16} />
-            </button>
-            <button
-              className={l.collider ? "active" : ""}
-              aria-label={`${l.name} 충돌 전환`}
-              title="충돌 레이어"
-              onClick={() => {
-                record();
-                publish({
-                  ...project,
-                  layers: project.layers.map((a) =>
-                    a.id === l.id ? { ...a, collider: !a.collider } : a,
-                  ),
-                });
-              }}
-            >
-              <Shield size={16} />
-            </button>
+      <div className="map-details">
+        <div className="layers">
+          <div className="section-title">
+            <h2>Layers</h2>
+            {(["tile", "object"] as const).map((kind) => (
+              <button
+                key={kind}
+                disabled={project.layers.length >= 32}
+                onClick={() => {
+                  record();
+                  const id = crypto.randomUUID();
+                  publish({
+                    ...project,
+                    layers: [
+                      ...project.layers,
+                      {
+                        id,
+                        name: `${kind === "object" ? "Objects" : "Tiles"} ${project.layers.length + 1}`,
+                        kind,
+                        visible: true,
+                        collider: false,
+                      },
+                    ],
+                  });
+                  setLayer(id);
+                  setTool("place");
+                  setSelectedObject(undefined);
+                }}
+              >
+                <Plus size={16} />
+                {kind === "object" ? "객체" : "타일"} 레이어
+              </button>
+            ))}
           </div>
-        ))}
+          {project.layers.map((l) => (
+            <div
+              className={`layer ${l.id === layerId ? "active" : ""}`}
+              key={l.id}
+            >
+              <button
+                aria-label={`${l.name} 표시 전환`}
+                onClick={() => {
+                  record();
+                  publish({
+                    ...project,
+                    layers: project.layers.map((a) =>
+                      a.id === l.id ? { ...a, visible: !a.visible } : a,
+                    ),
+                  });
+                }}
+              >
+                {l.visible ? <Eye size={16} /> : <EyeOff size={16} />}
+              </button>
+              <button
+                className="layer-name"
+                onClick={() => {
+                  setLayer(l.id);
+                  setSelectedObject(undefined);
+                  if (l.kind === "object" && tool === "fill") setTool("place");
+                }}
+              >
+                {l.name}
+                {l.kind === "object"
+                  ? " · 객체"
+                  : l.autotile
+                    ? " · Auto"
+                    : " · 타일"}
+              </button>
+              {l.kind === "tile" && (
+                <button
+                  aria-label={`${l.name} 오토타일 설정`}
+                  title="오토타일 설정"
+                  onClick={() => setRuleLayer(l.id)}
+                >
+                  <Settings2 size={16} />
+                </button>
+              )}
+              <button
+                className={l.collider ? "active" : ""}
+                aria-label={`${l.name} 충돌 전환`}
+                title="충돌 레이어"
+                onClick={() => {
+                  record();
+                  publish({
+                    ...project,
+                    layers: project.layers.map((a) =>
+                      a.id === l.id ? { ...a, collider: !a.collider } : a,
+                    ),
+                  });
+                }}
+              >
+                <Shield size={16} />
+              </button>
+            </div>
+          ))}
+        </div>
+        {selectedObject && (
+          <MapObjectProperties
+            object={selectedObject}
+            assets={assets}
+            project={project}
+            onEdit={onEdit}
+            onChange={(object) => {
+              commit(updateObject(working.current, object));
+              if (object.assetId !== selectedObject.assetId)
+                onSelect(object.assetId);
+            }}
+          />
+        )}
       </div>
       {ruleLayer && project.layers.some((l) => l.id === ruleLayer) && (
         <AutotileEditor

@@ -38,9 +38,22 @@ export interface Placement {
 export interface Layer {
   id: string;
   name: string;
+  kind: "tile" | "object";
   visible: boolean;
   collider: boolean;
   autotile?: AutotileConfig;
+}
+export interface MapObject {
+  id: string;
+  assetId: string;
+  layerId: string;
+  /** Integer pixel coordinates of the pivot in the map. */
+  x: number;
+  y: number;
+  pivotX: number;
+  pivotY: number;
+  z: number;
+  collider: boolean;
 }
 export interface AutotileRule {
   id: string;
@@ -52,13 +65,14 @@ export interface AutotileConfig {
   rules: AutotileRule[];
 }
 export interface Project {
-  version: 2;
+  version: 3;
   name: string;
   tileSize: number;
   mapWidth: number;
   mapHeight: number;
   layers: Layer[];
   placements: Placement[];
+  objects: MapObject[];
   clips: AnimationClip[];
   activeClipId: string;
 }

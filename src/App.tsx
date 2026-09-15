@@ -466,6 +466,9 @@ export default function App() {
               onChange={setProject}
               onError={onError}
               onSelect={select}
+              onEdit={(id) => {
+                if (select(id)) setMode("sprite");
+              }}
             />
           )}
         </div>
