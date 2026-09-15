@@ -1,0 +1,91 @@
+{
+  "assets": [
+    {
+      "id": "a",
+      "name": "A",
+      "width": 5,
+      "height": 7,
+      "url": "/a.png",
+      "parentId": null,
+      "createdAt": ""
+    },
+    {
+      "id": "b",
+      "name": "B",
+      "width": 3,
+      "height": 4,
+      "url": "/b.png",
+      "parentId": null,
+      "createdAt": ""
+    },
+    {
+      "id": "c",
+      "name": "C",
+      "width": 9,
+      "height": 5,
+      "url": "/c.png",
+      "parentId": null,
+      "createdAt": ""
+    }
+  ],
+  "clip": {
+    "id": "alignment-qa",
+    "name": "Aligned walk",
+    "fps": 8,
+    "loop": false,
+    "variant": "plain",
+    "pivot": { "x": 0.25, "y": 0.75 },
+    "frames": [
+      { "assetId": "a", "durationMs": 125, "offsetX": -4, "offsetY": 2 },
+      { "assetId": "b", "durationMs": 375, "offsetX": 5, "offsetY": -6 },
+      { "assetId": "c", "durationMs": 200, "offsetX": -1, "offsetY": 0 }
+    ]
+  },
+  "manifest": {
+    "version": 2,
+    "image": "sprite-atlas.png",
+    "name": "Aligned walk",
+    "fps": 8,
+    "loop": false,
+    "variant": "plain",
+    "sheetWidth": 39,
+    "sheetHeight": 12,
+    "pivot": { "x": 0.3076923076923077, "y": 0.6666666666666666 },
+    "sourcePivot": { "x": 0.25, "y": 0.75 },
+    "frames": [
+      {
+        "x": 0,
+        "y": 0,
+        "w": 13,
+        "h": 12,
+        "assetId": "a",
+        "duration": 0.125,
+        "offsetX": -4,
+        "offsetY": 2,
+        "sourceRect": { "x": 0, "y": 5, "w": 5, "h": 7 }
+      },
+      {
+        "x": 13,
+        "y": 0,
+        "w": 13,
+        "h": 12,
+        "assetId": "b",
+        "duration": 0.375,
+        "offsetX": 5,
+        "offsetY": -6,
+        "sourceRect": { "x": 23, "y": 0, "w": 3, "h": 4 }
+      },
+      {
+        "x": 26,
+        "y": 0,
+        "w": 13,
+        "h": 12,
+        "assetId": "c",
+        "duration": 0.2,
+        "offsetX": -1,
+        "offsetY": 0,
+        "sourceRect": { "x": 27, "y": 5, "w": 9, "h": 5 }
+      }
+    ]
+  }
+}

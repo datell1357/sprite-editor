@@ -1,4 +1,5 @@
 import type { AnimationClip, Asset, PortableProject, Project } from "../types";
+import { validPivot, validFrameOffset } from "./animationLayout";
 import {
   autotileAssets,
   requireTileDimensions,
@@ -175,6 +176,7 @@ export function validateProject(value: unknown): Project {
         !c.name.trim() ||
         c.name.length > 120 ||
         typeof c.loop !== "boolean" ||
+        (c.pivot !== undefined && !validPivot(c.pivot)) ||
         (c.variant !== undefined &&
           !["plain", "pixel-unfake"].includes(c.variant)) ||
         typeof c.fps !== "number" ||
@@ -189,6 +191,8 @@ export function validateProject(value: unknown): Project {
           (f) =>
             !f ||
             typeof f.assetId !== "string" ||
+            !validFrameOffset(f.offsetX) ||
+            !validFrameOffset(f.offsetY) ||
             typeof f.durationMs !== "number" ||
             !Number.isFinite(f.durationMs) ||
             f.durationMs <= 0 ||

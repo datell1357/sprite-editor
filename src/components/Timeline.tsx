@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Play,
   Pause,
@@ -8,9 +8,13 @@ import {
   Archive,
   ArrowUp,
   Download,
+  Crosshair,
 } from "lucide-react";
 import type { AnimationClip, Asset } from "../types";
 import { download, downloadJSON, loadImage } from "../lib/api";
+import { animationLayout, atlasManifest } from "../lib/animationLayout";
+import { AnimationPreview } from "./AnimationPreview";
+import { AnimationAlignment } from "./AnimationAlignment";
 import {
   frameAtElapsed,
   keepCandidate,
@@ -35,9 +39,19 @@ export function Timeline({
 }) {
   const [playing, setPlaying] = useState(false),
     [frame, setFrame] = useState(0);
+  const [aligning, setAligning] = useState(false),
+    [exporting, setExporting] = useState(false);
   const { fps, frames: clipFrames, loop } = clip;
   const sequence = clipFrames.map((f) => f.assetId);
   const candidates = clip.candidates || [];
+  const preview = useMemo(() => {
+    if (!clip.frames.length) return { error: "" };
+    try {
+      return { layout: animationLayout(clip, assets), error: "" };
+    } catch (e) {
+      return { error: (e as Error).message };
+    }
+  }, [clip, assets]);
   function curate(action: () => AnimationClip) {
     try {
       onClip(action());
@@ -71,7 +85,6 @@ export function Timeline({
     setFrame((f) => Math.min(f, Math.max(0, clipFrames.length - 1)));
     setPlaying(false);
   }, [clipFrames]);
-  const current = assets.find((a) => a.id === sequence[frame]);
   function move(index: number, delta: number) {
     const next = [...clipFrames],
       target = index + delta;
@@ -80,56 +93,49 @@ export function Timeline({
     onClip({ ...clip, frames: next });
   }
   async function exportAtlas() {
+    setExporting(true);
     try {
-      const frames = await Promise.all(
-        sequence.map((id) => {
-          const a = assets.find((a) => a.id === id);
-          if (!a) throw new Error("프레임 자산이 누락됐습니다.");
-          return loadImage(a.url);
-        }),
+      const layout = animationLayout(clip, assets),
+        manifest = atlasManifest(clip, layout);
+      const sources = new Map(layout.frames.map((f) => [f.asset.id, f.asset]));
+      const images = new Map(
+        await Promise.all(
+          [...sources.values()].map(async (a) => {
+            const image = await loadImage(a.url);
+            if (image.width !== a.width || image.height !== a.height)
+              throw new Error("프레임의 실제 크기가 자산 정보와 다릅니다.");
+            return [a.id, image] as const;
+          }),
+        ),
       );
-      const w = Math.max(...frames.map((f) => f.width)),
-        h = Math.max(...frames.map((f) => f.height));
-      const cols = Math.min(frames.length, Math.max(1, Math.floor(4096 / w))),
-        rows = Math.ceil(frames.length / cols);
-      if (rows * h > 8192)
-        throw new Error(
-          "아틀라스가 너무 큽니다. 프레임 수나 이미지 크기를 줄여 주세요.",
-        );
       const c = document.createElement("canvas");
-      c.width = cols * w;
-      c.height = rows * h;
+      c.width = manifest.sheetWidth;
+      c.height = manifest.sheetHeight;
       const ctx = c.getContext("2d")!;
       ctx.imageSmoothingEnabled = false;
-      const layout = frames.map((f, i) => {
-        const x = (i % cols) * w,
-          y = Math.floor(i / cols) * h,
-          offsetX = Math.floor((w - f.width) / 2),
-          offsetY = h - f.height;
-        ctx.drawImage(f, x + offsetX, y + offsetY);
-        return {
-          x,
-          y,
-          w,
-          h,
-          offsetX,
-          offsetY,
-          duration: clipFrames[i].durationMs / 1000,
-          assetId: sequence[i],
-        };
-      });
-      download("sprite-atlas.png", c.toDataURL());
-      downloadJSON("sprite-atlas.json", {
-        version: 1,
-        image: "sprite-atlas.png",
-        fps,
-        loop,
-        name: clip.name,
-        variant: clip.variant,
-        frames: layout,
-      });
+      manifest.frames.forEach((f) =>
+        ctx.drawImage(images.get(f.assetId)!, f.sourceRect.x, f.sourceRect.y),
+      );
+      const png = await new Promise<Blob>((resolve, reject) =>
+        c.toBlob((blob) =>
+          blob ? resolve(blob) : reject(new Error("PNG를 만들 수 없습니다.")),
+        ),
+      );
+      if (png.size > 12 * 1024 * 1024)
+        throw new Error(
+          "PNG 아틀라스는 12MB 이하여야 다시 가져올 수 있습니다. 프레임 수나 크기를 줄여 주세요.",
+        );
+      const url = URL.createObjectURL(png);
+      try {
+        download("sprite-atlas.png", url);
+        downloadJSON("sprite-atlas.json", manifest);
+      } finally {
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
     } catch (e) {
       onError((e as Error).message);
+    } finally {
+      setExporting(false);
     }
   }
   return (
@@ -141,6 +147,17 @@ export function Timeline({
           Timeline <span>{sequence.length} frames</span>
         </h2>
         <div className="inline">
+          <button
+            aria-label="프레임 정렬과 피벗"
+            title="프레임 정렬과 피벗"
+            disabled={!sequence.length}
+            onClick={() => {
+              setPlaying(false);
+              setAligning(true);
+            }}
+          >
+            <Crosshair size={16} />
+          </button>
           <label className="loop-toggle">
             <input
               type="checkbox"
@@ -175,7 +192,7 @@ export function Timeline({
           </label>
           <button
             title="아틀라스 PNG와 JSON 내보내기"
-            disabled={!sequence.length}
+            disabled={!sequence.length || exporting}
             onClick={exportAtlas}
           >
             <Download size={16} />
@@ -194,9 +211,9 @@ export function Timeline({
         >
           {playing ? <Pause /> : <Play />}
         </button>
-        {current && (
+        {preview.layout && (
           <div className="play-preview checker">
-            <img alt="애니메이션 미리보기" src={current.url} />
+            <AnimationPreview layout={preview.layout} frame={frame} />
           </div>
         )}
         <div className="frame-list">
@@ -272,6 +289,11 @@ export function Timeline({
           )}
         </div>
       </div>
+      {preview.error && (
+        <p role="alert" className="notice">
+          {preview.error}
+        </p>
+      )}
       {clipFrames[frame] && (
         <label className="frame-duration">
           프레임 {frame + 1} 시간{" "}
@@ -343,6 +365,17 @@ export function Timeline({
             </div>
           ))}
         </div>
+      )}
+      {aligning && (
+        <AnimationAlignment
+          clip={clip}
+          assets={assets}
+          initialFrame={frame}
+          onClose={() => setAligning(false)}
+          onApply={(updated) => {
+            if (curate(() => updated)) setAligning(false);
+          }}
+        />
       )}
     </section>
   );

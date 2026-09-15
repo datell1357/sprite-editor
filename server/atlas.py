@@ -1,4 +1,4 @@
-"""Validate a sprite-gen runtime atlas before importing any frame."""
+"""Validate sprite-gen and editor atlases before importing any frame."""
 import base64
 import hashlib
 import io
@@ -16,11 +16,59 @@ def positive_number(value, label, upper=60000):
     return value
 
 
+def normalized_pivot(value):
+    if not isinstance(value, dict) or any(type(value.get(k)) not in (int, float) or
+            not math.isfinite(value[k]) or not 0 <= value[k] <= 1 for k in ('x', 'y')):
+        raise ValueError('아틀라스 피벗은 0~1의 좌표여야 합니다.')
+    return {k: value[k] for k in ('x', 'y')}
+
+
+def editor_alignment(manifest):
+    """Validate the editable source rectangles against the rendered cell geometry."""
+    frames = manifest['frames']
+    pivot = normalized_pivot(manifest.get('sourcePivot'))
+    output_pivot = normalized_pivot(manifest.get('pivot'))
+    if any(type(manifest.get(k)) is not int or not 1 <= manifest[k] <= 8192 for k in ('sheetWidth', 'sheetHeight')):
+        raise ValueError('아틀라스 시트 크기가 올바르지 않습니다.')
+    if manifest['sheetWidth'] * manifest['sheetHeight'] > 16_777_216:
+        raise ValueError('PNG 시트는 총 16메가픽셀 이하여야 합니다.')
+    sources, offsets = [], []
+    for f in frames:
+        r = f.get('sourceRect')
+        if not isinstance(r, dict) or any(type(r.get(k)) is not int for k in ('x', 'y', 'w', 'h')):
+            raise ValueError('원본 프레임 영역이 올바르지 않습니다.')
+        if not 1 <= r['w'] <= 2048 or not 1 <= r['h'] <= 2048:
+            raise ValueError('원본 프레임은 각 변 2048px 이하여야 합니다.')
+        if any(type(f.get(k)) is not int or abs(f[k]) > 2048 for k in ('offsetX', 'offsetY')):
+            raise ValueError('프레임 위치는 -2048~2048px 정수여야 합니다.')
+        if (f['x'] < 0 or f['y'] < 0 or not 1 <= f['w'] <= 8192 or not 1 <= f['h'] <= 8192 or
+                f['x'] + f['w'] > manifest['sheetWidth'] or f['y'] + f['h'] > manifest['sheetHeight'] or
+                r['x'] < f['x'] or r['y'] < f['y'] or r['x'] + r['w'] > f['x'] + f['w'] or r['y'] + r['h'] > f['y'] + f['h']):
+            raise ValueError('원본 영역 또는 출력 셀이 시트 밖에 있습니다.')
+        sources.append({k: r[k] for k in ('x', 'y', 'w', 'h')})
+        offsets.append({k: f[k] for k in ('offsetX', 'offsetY')})
+    base_w, base_h = max(r['w'] for r in sources), max(r['h'] for r in sources)
+    raw = [((base_w-r['w'])//2 + f['offsetX'], base_h-r['h'] + f['offsetY']) for r,f in zip(sources,frames)]
+    left, top = min(0, *(x for x,_ in raw)), min(0, *(y for _,y in raw))
+    width = max(base_w, *(x+r['w'] for (x,y),r in zip(raw,sources))) - left
+    height = max(base_h, *(y+r['h'] for (x,y),r in zip(raw,sources))) - top
+    if width * height * len(frames) > 16_777_216:
+        raise ValueError('정렬된 프레임의 총 픽셀 수가 너무 큽니다.')
+    expected_pivot = {'x': (math.floor(base_w*pivot['x']+0.5)-left)/width,
+                      'y': (math.floor(base_h*pivot['y']+0.5)-top)/height}
+    if any(not math.isclose(output_pivot[k], expected_pivot[k], abs_tol=1e-9, rel_tol=0) for k in ('x','y')):
+        raise ValueError('출력 피벗과 원본 피벗이 일치하지 않습니다.')
+    for f,r,(x,y) in zip(frames,sources,raw):
+        if (f['w'],f['h']) != (width,height) or (r['x'],r['y']) != (f['x']+x-left,f['y']+y-top):
+            raise ValueError('프레임 위치와 출력 영역이 일치하지 않습니다.')
+    return sources, offsets, pivot
+
+
 def normalize_manifest(manifest):
     """Accept the editor's existing atlas export without changing its pixels."""
     if 'frame_layout' in manifest or 'animation' in manifest:
         return manifest, None
-    if type(manifest.get('version')) is not int or manifest['version'] != 1 or not isinstance(manifest.get('frames'), list):
+    if type(manifest.get('version')) is not int or manifest['version'] not in (1, 2) or not isinstance(manifest.get('frames'), list):
         raise ValueError('sprite-gen manifest 또는 Sprite Editor 아틀라스 JSON이 필요합니다.')
     name = manifest.get('name')
     if not isinstance(name, str) or not name.strip() or len(name) > 120:
@@ -37,13 +85,19 @@ def normalize_manifest(manifest):
             raise ValueError('프레임 좌표는 정수여야 합니다.')
         rects.append({k: frame[k] for k in ('x', 'y', 'w', 'h')})
         durations.append(positive_number(frame.get('duration'), '프레임 시간(초)', 60) * 1000)
-    # The last row may be partially empty. Sheet dimensions are taken from the
-    # PNG below, then all rectangles pass the same bounds and pixel-budget gate.
+    alignment = {}
+    sheet = {}
+    if manifest['version'] == 2:
+        rects, offsets, pivot = editor_alignment(manifest)
+        alignment = {'offsets': offsets, 'pivot': pivot}
+        sheet = {k: manifest[k] for k in ('sheetWidth', 'sheetHeight')}
+    # Legacy exports take sheet dimensions from the PNG; v2 declares them.
+    # A partially empty last row is allowed in either version.
     return {
         'characterId': 'Sprite Editor',
-        'frame_layout': {'rows': {name: rects}},
+        'frame_layout': {'rows': {name: rects}, **sheet},
         'animation': {'rows': {name: {'frames': len(rects), 'fps': manifest.get('fps'),
-                                    'loop': manifest.get('loop'), 'durations_ms': durations}}},
+                                    'loop': manifest.get('loop'), 'durations_ms': durations, **alignment}}},
     }, variant
 
 
@@ -52,6 +106,7 @@ def parse_atlas(payload):
     if not isinstance(manifest, dict):
         raise ValueError("sprite-gen manifest.json이 필요합니다.")
     editor_export = 'frame_layout' not in manifest and 'animation' not in manifest
+    aligned_editor = editor_export and type(manifest.get('version')) is int and manifest['version'] == 2
     manifest, variant = normalize_manifest(manifest)
     layout = manifest.get("frame_layout")
     animation = manifest.get("animation")
@@ -72,7 +127,7 @@ def parse_atlas(payload):
         with Image.open(io.BytesIO(data)) as image:
             if image.format != "PNG" or max(image.size) > 8192 or image.width * image.height > 16_777_216:
                 raise ValueError("PNG 시트는 최대 8192px, 총 16메가픽셀 이하여야 합니다.")
-            if not editor_export and image.size != (layout.get("sheetWidth"), layout.get("sheetHeight")):
+            if (not editor_export or aligned_editor) and image.size != (layout.get("sheetWidth"), layout.get("sheetHeight")):
                 raise ValueError("선택한 PNG 크기가 manifest의 시트 크기와 다릅니다.")
             image.load()
             sheet = image.convert("RGBA")
@@ -115,7 +170,7 @@ def parse_atlas(payload):
             pixel_budget += w * h
             if pixel_budget > 16_777_216:
                 raise ValueError("총 프레임 픽셀 수가 너무 큽니다.")
-        if len({(r["w"], r["h"]) for r in rects}) != 1:
+        if not aligned_editor and len({(r["w"], r["h"]) for r in rects}) != 1:
             raise ValueError("한 상태의 프레임은 같은 셀 크기여야 합니다.")
         plans.append((state, rects, durations, fps, row["loop"]))
     assets, clips = [], []
@@ -128,9 +183,11 @@ def parse_atlas(payload):
             assets.append((image, {"id": asset_id, "name": f"{character} · {state} · {index + 1:02d}"[:120],
                                   **({'processing': variant} if variant else {}),
                                   "source": {"kind": "sprite-editor" if editor_export else "sprite-gen", "state": state, "index": index, "sheetSha256": digest, "rect": {"x": x, "y": y, "w": w, "h": h}}}))
-            frames.append({"assetId": asset_id, "durationMs": durations[index]})
+            frames.append({"assetId": asset_id, "durationMs": durations[index],
+                           **(timing[state]['offsets'][index] if aligned_editor else {})})
         clips.append({"id": str(uuid.uuid4()), "name": state, "frames": frames, "fps": fps, "loop": loop,
-                      **({'variant': variant} if variant else {})})
+                      **({'variant': variant} if variant else {}),
+                      **({'pivot': timing[state]['pivot']} if aligned_editor else {})})
     return assets, clips
 
 

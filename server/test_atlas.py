@@ -1,6 +1,7 @@
 import base64
 import copy
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -27,6 +28,52 @@ class AtlasTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
         self.store = Store(Path(temp.name))
+
+    def aligned_export(self):
+        spec = json.loads((Path(__file__).parents[1] / 'test-fixtures/animation-alignment.json').read_text())
+        manifest = spec['manifest']
+        image = Image.new('RGBA', (manifest['sheetWidth'], manifest['sheetHeight']))
+        for index, frame in enumerate(manifest['frames']):
+            r = frame['sourceRect']
+            source = Image.new('RGBA', (r['w'], r['h']), (30+index*50, 70, 150, 128+index*50))
+            source.putpixel((0, 0), (0, 0, 0, 0))
+            image.paste(source, (r['x'], r['y']))
+        buf = io.BytesIO(); image.save(buf, 'PNG')
+        return {'manifest': manifest, 'png': 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode()}, spec
+
+    def test_aligned_export_restores_editable_source_sizes_offsets_and_pivot(self):
+        payload, spec = self.aligned_export(); original = copy.deepcopy(payload)
+        result = import_atlas(self.store, payload)
+        self.assertEqual(payload, original)
+        clip = result['clips'][0]
+        self.assertEqual(clip['pivot'], spec['clip']['pivot'])
+        self.assertEqual((clip['name'],clip['fps'],clip['loop'],clip['variant']), ('Aligned walk',8,False,'plain'))
+        for index, (frame, asset, expected) in enumerate(zip(clip['frames'], result['assets'], spec['clip']['frames'])):
+            self.assertEqual({k:frame[k] for k in ('durationMs','offsetX','offsetY')}, {k:expected[k] for k in ('durationMs','offsetX','offsetY')})
+            self.assertEqual((asset['width'],asset['height']), (spec['assets'][index]['width'],spec['assets'][index]['height']))
+            self.assertEqual(frame['assetId'],asset['id'])
+            with Image.open(self.store.image_path(asset['id'])) as image:
+                self.assertEqual(image.getpixel((0,0)), (0,0,0,0))
+                self.assertEqual(image.getpixel((1,1)), (30+index*50,70,150,128+index*50))
+
+    def test_aligned_export_rejects_inconsistent_geometry_before_publishing(self):
+        edits = [lambda m:m.update(sourcePivot={'x':0.5,'y':True}),
+                 lambda m:m.update(pivot={'x':float('nan'),'y':0}),
+                 lambda m:m.update(pivot={'x':0,'y':0}),
+                 lambda m:m.update(sheetWidth=40),
+                 lambda m:m['frames'][1].update(offsetX=1.5),
+                 lambda m:m['frames'][1].update(offsetY=True),
+                 lambda m:m['frames'][1].update(offsetX=2049),
+                 lambda m:m['frames'][2].update(offsetX=0),
+                 lambda m:m['frames'][2]['sourceRect'].update(x=28),
+                 lambda m:m['frames'][2]['sourceRect'].update(w=2049),
+                 lambda m:m['frames'][2].update(w=14),
+                 lambda m:m['frames'][1].pop('sourceRect')]
+        for edit in edits:
+            payload,_ = self.aligned_export(); edit(payload['manifest'])
+            with self.assertRaises(ValueError): import_atlas(self.store,payload)
+            self.assertEqual(self.store.list('assets'), [])
+            self.assertEqual(list((self.store.root / 'assets').iterdir()), [])
 
     def editor_export(self):
         payload = fixture()

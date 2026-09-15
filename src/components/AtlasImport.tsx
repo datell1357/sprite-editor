@@ -47,7 +47,7 @@ export function AtlasImport({
       const data = JSON.parse(await manifest.text());
       const clipCount = data?.frame_layout?.rows
         ? Object.keys(data.frame_layout.rows).length
-        : data?.version === 1 && Array.isArray(data.frames)
+        : [1, 2].includes(data?.version) && Array.isArray(data.frames)
           ? 1
           : 0;
       if (!clipCount || clipCount > remainingClips)
@@ -132,8 +132,9 @@ export function AtlasImport({
           </p>
           <p className="hint">
             타임라인에서 내보낸 sprite-atlas.json과 sprite-atlas.png도 다시
-            가져올 수 있습니다. 후보 목록과 원본 버전 관계까지 옮기려면 프로젝트
-            내보내기를 사용하세요.
+            가져올 수 있습니다. 새 아틀라스는 프레임 정렬과 피벗도 복원합니다.
+            후보 목록과 원본 버전 관계까지 옮기려면 프로젝트 내보내기를
+            사용하세요.
           </p>
           <label>
             아틀라스 JSON

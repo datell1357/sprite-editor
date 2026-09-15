@@ -79,6 +79,8 @@ export interface Project {
 export interface ClipFrame {
   assetId: string;
   durationMs: number;
+  offsetX?: number;
+  offsetY?: number;
 }
 export interface AnimationClip {
   id: string;
@@ -88,6 +90,8 @@ export interface AnimationClip {
   fps: number;
   loop: boolean;
   variant?: "plain" | "pixel-unfake";
+  /** Normalized pivot of the unpadded, shared animation cell. */
+  pivot?: { x: number; y: number };
 }
 export interface PortableProject {
   kind: "sprite-editor";
