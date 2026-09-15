@@ -25,9 +25,9 @@ def safe_path(name):
     return p
 
 
-def parse_run(data, max_clips=64):
+def parse_run(data, max_clips=128):
     if len(data)>MAX_ARCHIVE: raise ValueError('작업 ZIP은 12MiB 이하여야 합니다.')
-    if type(max_clips) is not int or not 1<=max_clips<=64: raise ValueError('추가 가능한 클립 수가 올바르지 않습니다.')
+    if type(max_clips) is not int or not 1<=max_clips<=128: raise ValueError('추가 가능한 클립 수가 올바르지 않습니다.')
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             entries=archive.infolist()
@@ -109,7 +109,7 @@ def import_run(store,payload):
     if not isinstance(encoded,str): raise ValueError('작업 ZIP 데이터가 필요합니다.')
     try: data=base64.b64decode(encoded,validate=True)
     except ValueError as exc: raise ValueError('ZIP 인코딩이 올바르지 않습니다.') from exc
-    images,clips=parse_run(data,payload.get('maxClips',64))
+    images,clips=parse_run(data,payload.get('maxClips',128))
     import_id=str(uuid.uuid4());folder=store.root/'imports';folder.mkdir(exist_ok=True)
     (folder/f'{import_id}.zip').write_bytes(data)
     job={'id':import_id,'status':'completed','createdAt':now(),'finishedAt':now(),

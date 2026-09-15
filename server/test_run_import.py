@@ -74,3 +74,5 @@ class RunImportTests(unittest.TestCase):
     def test_valid_archive_root_and_clip_capacity_are_explicit(self):
         images,clips=parse_run(archive(root=''),1);self.assertEqual((len(images),len(clips)),(4,1))
         with self.assertRaises(ValueError):parse_run(archive(),0)
+        self.assertEqual(len(parse_run(archive(),128)[1]),1)
+        with self.assertRaises(ValueError):parse_run(archive(),129)

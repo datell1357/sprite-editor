@@ -18,6 +18,7 @@ from .directions import FACING,validate_directions,direction_plan,publish_direct
 
 JOB_TIMEOUT_SECONDS = 1200
 TERMINATION_GRACE_SECONDS = 5
+MAX_ACTIVE_JOBS = 40  # Up to five motions across eight reviewed directions.
 
 
 def stop_process_group(process):
@@ -146,14 +147,16 @@ class Jobs:
             if self.stopping:
                 raise ValueError("서비스를 종료하고 있습니다. 잠시 후 다시 실행해 주세요.")
             active = sum(j["status"] in {"queued", "running"} for j in self.store.list("jobs"))
-            if active + len(requests) > 8:
-                raise ValueError("대기 작업이 많습니다. 완료 후 다시 실행해 주세요.")
+            if active + len(requests) > MAX_ACTIVE_JOBS:
+                raise ValueError(f"진행·대기 작업은 최대 {MAX_ACTIVE_JOBS}개입니다. 완료 후 다시 실행해 주세요.")
             batch_id = str(uuid.uuid4()) if directions is not None else None
             jobs = []
             for index, request in enumerate(requests):
                 job = {"id": str(uuid.uuid4()), "status": "queued", "createdAt": now(), "request": request}
                 if directions is not None:
-                    job.update(batchId=batch_id, direction=directions[index])
+                    job.update(batchId=batch_id, batchIndex=index, batchSize=len(requests))
+                    if directions[index] is not None:
+                        job['direction'] = directions[index]
                 jobs.append(job)
             # Admit every job in one transaction before the worker can see any.
             with self.store.connect() as db:
@@ -163,21 +166,43 @@ class Jobs:
         return jobs
 
     def submit_batch(self, payload):
-        allowed = {'anchors', 'prompt', 'state', 'size', 'frames', 'fps', 'loop', 'accessConfirmed'}
+        allowed = {'anchors', 'referenceId', 'motions', 'prompt', 'state', 'size', 'frames', 'fps', 'loop', 'accessConfirmed'}
         if not isinstance(payload, dict) or set(payload) - allowed:
             raise ValueError('일괄 생성 설정이 올바르지 않습니다.')
-        anchors = payload.get('anchors')
-        if not isinstance(anchors, list) or not 1 <= len(anchors) <= 8:
-            raise ValueError('확인한 방향 기준을 1~8개 선택해 주세요.')
-        if any(not isinstance(a, dict) or set(a) != {'direction', 'assetId'} or
-               not isinstance(a['direction'], str) or a['direction'] not in FACING for a in anchors):
-            raise ValueError('방향 기준의 형식이 올바르지 않습니다.')
-        directions = [a['direction'] for a in anchors]
-        if len(set(directions)) != len(directions):
-            raise ValueError('방향 기준이 중복됩니다.')
-        common = {k: v for k, v in payload.items() if k != 'anchors'}
-        requests = [self.validate_request({**common, 'kind': 'animate', 'provider': 'codex',
-                                          'referenceId': a['assetId']}) for a in anchors]
+        if ('anchors' in payload) == ('referenceId' in payload):
+            raise ValueError('기준 자산 또는 방향별 기준 중 하나를 지정해 주세요.')
+        if 'anchors' in payload:
+            anchors = payload['anchors']
+            if not isinstance(anchors, list) or not 1 <= len(anchors) <= 8:
+                raise ValueError('확인한 방향 기준을 1~8개 선택해 주세요.')
+            if any(not isinstance(a, dict) or set(a) != {'direction', 'assetId'} or
+                   not isinstance(a['direction'], str) or a['direction'] not in FACING for a in anchors):
+                raise ValueError('방향 기준의 형식이 올바르지 않습니다.')
+            if len({a['direction'] for a in anchors}) != len(anchors):
+                raise ValueError('방향 기준이 중복됩니다.')
+        else:
+            anchors = [{'assetId': payload['referenceId'], 'direction': None}]
+        motion_fields = {'prompt', 'state', 'frames', 'fps', 'loop'}
+        if 'motions' in payload:
+            if motion_fields & set(payload):
+                raise ValueError('동작 목록과 이전 단일 동작 설정을 함께 지정할 수 없습니다.')
+            motions = payload['motions']
+            if not isinstance(motions, list) or not 1 <= len(motions) <= 5:
+                raise ValueError('동작은 1~5개를 선택해 주세요.')
+            if any(not isinstance(m, dict) or set(m) != motion_fields or
+                   not isinstance(m.get('state'), str) for m in motions):
+                raise ValueError('동작별 설정이 올바르지 않습니다.')
+            if len({m['state'] for m in motions}) != len(motions):
+                raise ValueError('동작 상태가 중복됩니다.')
+        else:
+            motions = [{k: payload.get(k) for k in motion_fields}]
+        common = {k: payload.get(k) for k in ('size', 'accessConfirmed')}
+        requests, directions = [], []
+        for anchor in anchors:
+            for motion in motions:
+                requests.append(self.validate_request({**common, **motion, 'kind': 'animate',
+                                                       'provider': 'codex', 'referenceId': anchor['assetId']}))
+                directions.append(anchor['direction'])
         return self.enqueue(requests, directions)
 
     def cancel(self, job_id):

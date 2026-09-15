@@ -1,0 +1,24 @@
+{
+  "size": 32,
+  "accessConfirmed": true,
+  "anchors": [
+    { "direction": "down", "assetId": "front-reference" },
+    { "direction": "up", "assetId": "back-reference" }
+  ],
+  "motions": [
+    {
+      "state": "walk",
+      "prompt": "walk naturally",
+      "frames": 4,
+      "fps": 8,
+      "loop": true
+    },
+    {
+      "state": "jump",
+      "prompt": "jump and land",
+      "frames": 3,
+      "fps": 5,
+      "loop": false
+    }
+  ]
+}

@@ -6,6 +6,9 @@ import {
   validAutotile,
 } from "./autotile";
 
+export const MAX_PROJECT_CLIPS = 128;
+export const MAX_PROJECT_ASSETS = 2048;
+
 export const emptyProject = (): Project => ({
   version: 3,
   name: "Untitled world",
@@ -167,7 +170,7 @@ export function validateProject(value: unknown): Project {
   if (
     !Array.isArray(p.clips) ||
     p.clips.length < 1 ||
-    p.clips.length > 64 ||
+    p.clips.length > MAX_PROJECT_CLIPS ||
     p.clips.some(
       (c) =>
         !c ||
@@ -212,7 +215,7 @@ export function validatePortable(value: unknown): PortableProject {
     !p ||
     p.kind !== "sprite-editor" ||
     !Array.isArray(p.assets) ||
-    p.assets.length > 256
+    p.assets.length > MAX_PROJECT_ASSETS
   )
     throw new Error("Sprite Editor 프로젝트가 아닙니다.");
   const project = validateProject(p.project);
@@ -340,9 +343,17 @@ export function updateClip(project: Project, clip: AnimationClip): Project {
 export function adoptClips(project: Project, clips: AnimationClip[]): Project {
   if (!clips.length) throw new Error("추가할 클립이 없습니다.");
   const existing = new Set(project.clips.map((c) => c.id));
+  const combined = [
+    ...project.clips,
+    ...clips.filter((c) => !existing.has(c.id)),
+  ];
+  if (combined.length > MAX_PROJECT_CLIPS)
+    throw new Error(
+      `프로젝트는 최대 ${MAX_PROJECT_CLIPS}개 클립을 담을 수 있습니다.`,
+    );
   return validateProject({
     ...project,
-    clips: [...project.clips, ...clips.filter((c) => !existing.has(c.id))],
+    clips: combined,
     activeClipId: clips[0].id,
   });
 }

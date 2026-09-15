@@ -22,13 +22,14 @@ import { Inspector } from "./components/Inspector";
 import { AtlasImport } from "./components/AtlasImport";
 import { AssetComparison } from "./components/AssetComparison";
 import { MapEditor } from "./components/MapEditor";
-import { api, download, pngData } from "./lib/api";
+import { api, download } from "./lib/api";
 import {
   PROJECT_FILE_MAX_BYTES,
-  serializeProjectFile,
+  serializeProjectAssets,
 } from "./lib/projectFile";
 import { requireTileDimensions } from "./lib/autotile";
 import {
+  MAX_PROJECT_CLIPS,
   emptyProject,
   activeClip,
   updateClip,
@@ -221,17 +222,7 @@ export default function App() {
   async function exportProject() {
     setBusy(true);
     try {
-      if (assets.length > 256)
-        throw new Error("한 프로젝트에 최대 256개 자산을 내보낼 수 있습니다.");
-      const embedded = [];
-      for (const asset of assets) {
-        embedded.push({ ...asset, png: await pngData(asset) });
-      }
-      const text = serializeProjectFile({
-        kind: "sprite-editor",
-        project,
-        assets: embedded,
-      });
+      const text = await serializeProjectAssets(project, assets);
       const url = URL.createObjectURL(
         new Blob([text], { type: "application/json" }),
       );
@@ -402,14 +393,18 @@ export default function App() {
                   </select>
                 </label>
                 <button
-                  disabled={!connected || busy || project.clips.length >= 64}
+                  disabled={
+                    !connected ||
+                    busy ||
+                    project.clips.length >= MAX_PROJECT_CLIPS
+                  }
                   onClick={() => setAtlasOpen(true)}
                 >
                   sprite-gen 가져오기
                 </button>
                 <button
                   aria-label="새 애니메이션 클립"
-                  disabled={project.clips.length >= 64}
+                  disabled={project.clips.length >= MAX_PROJECT_CLIPS}
                   onClick={() => {
                     const id = crypto.randomUUID();
                     setProject({
@@ -496,7 +491,7 @@ export default function App() {
       </main>
       {atlasOpen && (
         <AtlasImport
-          remainingClips={64 - project.clips.length}
+          remainingClips={MAX_PROJECT_CLIPS - project.clips.length}
           onClose={() => setAtlasOpen(false)}
           onImport={(added, clips) => {
             if (!dirty.current) setSelected(clips[0].frames[0].assetId);

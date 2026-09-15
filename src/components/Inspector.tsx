@@ -10,6 +10,7 @@ import type { AnimationClip, Asset, Capabilities, Job } from "../types";
 import { api } from "../lib/api";
 import { directionLabels } from "../lib/directions";
 import { BatchAnimation } from "./BatchAnimation";
+import type { AnimationTarget } from "../lib/animationBatch";
 
 const palette = [
   "#202126",
@@ -61,9 +62,8 @@ export function Inspector({
     [loop, setLoop] = useState(true),
     [accessConfirmed, setAccessConfirmed] = useState(false);
   const [directions, setDirections] = useState(["down", "right", "up", "left"]);
-  const [batchAnchors, setBatchAnchors] = useState<
-    { direction: string; assetId: string }[] | null
-  >(null);
+  const [batchTarget, setBatchTarget] = useState<AnimationTarget | null>(null);
+  const [historyCount, setHistoryCount] = useState(8);
   const [colors, setColors] = useState(16),
     [pitch, setPitch] = useState(""),
     [busy, setBusy] = useState(false);
@@ -78,6 +78,13 @@ export function Inspector({
       setBusy(false);
     }
   }
+  const activeJobs = jobs.filter(
+    (j) => j.status === "queued" || j.status === "running",
+  );
+  const finishedJobs = jobs.filter(
+    (j) => j.status !== "queued" && j.status !== "running",
+  );
+  const visibleJobs = [...activeJobs, ...finishedJobs.slice(0, historyCount)];
   return (
     <aside className="inspector panel">
       <section>
@@ -293,13 +300,24 @@ export function Inspector({
               : "Generate"}
         </button>
         {mode === "animate" && (
-          <button
-            className="wide"
-            disabled={busy || !assets.length || !capabilities?.spriteGen}
-            onClick={() => setBatchAnchors([])}
-          >
-            여러 방향 모션 생성
-          </button>
+          <>
+            <button
+              className="wide"
+              disabled={busy || !selected || !capabilities?.spriteGen}
+              onClick={() =>
+                selected && setBatchTarget({ referenceId: selected.id })
+              }
+            >
+              이 자산으로 여러 동작 생성
+            </button>
+            <button
+              className="wide"
+              disabled={busy || !assets.length || !capabilities?.spriteGen}
+              onClick={() => setBatchTarget({ anchors: [] })}
+            >
+              여러 방향·동작 생성
+            </button>
+          </>
         )}
         <p className="hint">
           연결된 계정으로 실행합니다. 제공자의 이용 한도·요금이 적용되며, 실제
@@ -402,7 +420,12 @@ export function Inspector({
         {!jobs.length && (
           <p className="hint">생성·정규화 작업이 여기에 표시됩니다.</p>
         )}
-        {jobs.slice(0, 8).map((job) => (
+        {!!activeJobs.length && (
+          <p className="hint">
+            진행·대기 {activeJobs.length}개 · 아래에서 개별 취소할 수 있습니다.
+          </p>
+        )}
+        {visibleJobs.map((job) => (
           <div className="job" key={job.id}>
             <div className="inline">
               {job.status === "completed" ? (
@@ -415,6 +438,7 @@ export function Inspector({
               <span>
                 {job.direction &&
                   `${directionLabels[job.direction] || job.direction} · `}
+                {job.request.state && `${job.request.state} · `}
                 {job.request.kind === "snap"
                   ? "픽셀 정리"
                   : job.request.prompt?.slice(0, 24)}
@@ -428,6 +452,11 @@ export function Inspector({
                 </button>
               )}
             </div>
+            {job.batchSize !== undefined && job.batchIndex !== undefined && (
+              <small>
+                일괄 요청 {job.batchIndex + 1} / {job.batchSize}
+              </small>
+            )}
             <small>
               {
                 {
@@ -499,24 +528,34 @@ export function Inspector({
                 ))}
                 <button
                   disabled={busy || !capabilities?.spriteGen}
-                  onClick={() => setBatchAnchors(job.directionAnchors!)}
+                  onClick={() =>
+                    setBatchTarget({ anchors: job.directionAnchors! })
+                  }
                 >
-                  이 기준들로 여러 방향 모션 생성
+                  이 기준들로 여러 방향·동작 생성
                 </button>
               </div>
             )}
           </div>
         ))}
+        {finishedJobs.length > historyCount && (
+          <button
+            className="wide"
+            onClick={() => setHistoryCount((n) => n + 8)}
+          >
+            이전 작업 더 보기 ({finishedJobs.length - historyCount}개 남음)
+          </button>
+        )}
       </section>
-      {batchAnchors && (
+      {batchTarget && (
         <BatchAnimation
           assets={assets}
-          anchors={batchAnchors}
+          target={batchTarget}
           defaults={{ prompt, size, state, frames, fps, loop, accessConfirmed }}
-          onClose={() => setBatchAnchors(null)}
+          onClose={() => setBatchTarget(null)}
           onSubmit={(confirmed) => {
             setAccessConfirmed(confirmed);
-            setBatchAnchors(null);
+            setBatchTarget(null);
             onJob();
           }}
         />

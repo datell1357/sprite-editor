@@ -19,8 +19,10 @@ export interface Job {
   archiveUrl?: string;
   directionAnchors?: { direction: string; assetId: string }[];
   batchId?: string;
+  batchIndex?: number;
+  batchSize?: number;
   direction?: string;
-  request: { kind: string; prompt?: string };
+  request: { kind: string; prompt?: string; state?: string };
 }
 export interface Capabilities {
   spriteGen: boolean;

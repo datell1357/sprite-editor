@@ -1616,6 +1616,50 @@ canvas {
 .batch-dialog .primary {
   margin-top: 12px;
 }
+.batch-reference {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin: 16px 0;
+  padding: 12px;
+  border-radius: 8px;
+}
+.batch-reference img {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.batch-reference span {
+  overflow-wrap: anywhere;
+}
+.motion-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  margin-bottom: 18px;
+}
+.batch-dialog .motion-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0 20px;
+}
+.motion-card legend {
+  padding: 0 6px;
+  font-weight: 600;
+}
+.motion-card textarea {
+  min-height: 80px;
+}
+.batch-settings .field {
+  min-width: 0;
+}
+.batch-settings input,
+.batch-settings select {
+  min-width: 0;
+  max-width: 100%;
+}
 @media (max-width: 600px) {
   .batch-anchors {
     grid-template-columns: 1fr 1fr;

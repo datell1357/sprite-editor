@@ -3,16 +3,24 @@ import { X } from "lucide-react";
 import type { Asset } from "../types";
 import { api } from "../lib/api";
 import { directionLabels } from "../lib/directions";
+import {
+  animationBatch,
+  motionStates,
+  type AnimationMotion,
+  type AnimationTarget,
+  type AnimationBatchRequest,
+} from "../lib/animationBatch";
+import { AnimationMotions } from "./AnimationMotions";
 
 export function BatchAnimation({
   assets,
-  anchors,
+  target,
   defaults,
   onSubmit,
   onClose,
 }: {
   assets: Asset[];
-  anchors: { direction: string; assetId: string }[];
+  target: AnimationTarget;
   defaults: {
     prompt: string;
     size: number;
@@ -27,8 +35,19 @@ export function BatchAnimation({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [settings, setSettings] = useState(defaults);
+  const [motions, setMotions] = useState<AnimationMotion[]>(() => [
+    {
+      state: motionStates.find((s) => s === defaults.state) ?? "walk",
+      prompt: defaults.prompt,
+      frames: defaults.frames,
+      fps: defaults.fps,
+      loop: defaults.loop,
+    },
+  ]);
   const [mapping, setMapping] = useState<Record<string, string>>(() =>
-    Object.fromEntries(anchors.map((a) => [a.direction, a.assetId])),
+    Object.fromEntries(
+      (target.anchors ?? []).map((a) => [a.direction, a.assetId]),
+    ),
   );
   const [reviewed, setReviewed] = useState<string[]>([]);
   const [busy, setBusy] = useState(false),
@@ -40,23 +59,32 @@ export function BatchAnimation({
     direction,
     assetId: mapping[direction],
   }));
-  const valid =
-    selected.length > 0 &&
-    selected.every((a) => assets.some((asset) => asset.id === a.assetId)) &&
-    settings.prompt.trim().length > 0 &&
-    settings.accessConfirmed &&
-    Number.isInteger(settings.frames) &&
-    settings.frames >= 2 &&
-    settings.frames <= 16 &&
-    Number.isInteger(settings.fps) &&
-    settings.fps >= 1 &&
-    settings.fps <= 60;
+  const directional = target.anchors !== undefined;
+  const reference = assets.find((a) => a.id === target.referenceId);
+  const referencesValid = directional
+    ? selected.every((a) => assets.some((asset) => asset.id === a.assetId))
+    : !!reference;
+  let request: AnimationBatchRequest | undefined;
+  try {
+    request = animationBatch({
+      ...(directional
+        ? { anchors: selected }
+        : { referenceId: target.referenceId! }),
+      size: settings.size,
+      accessConfirmed: settings.accessConfirmed,
+      motions,
+    });
+  } catch {
+    /* Field constraints and the summary explain why submit is disabled. */
+  }
+  const valid = referencesValid && !!request;
+  const jobCount = (directional ? selected.length : 1) * motions.length;
   async function submit() {
-    if (!valid || busy) return;
+    if (!valid || !request || busy) return;
     setBusy(true);
     setError("");
     try {
-      await api.batchAnimate({ ...settings, anchors: selected });
+      await api.batchAnimate(request);
       onSubmit(settings.accessConfirmed);
     } catch (e) {
       setError((e as Error).message);
@@ -75,14 +103,18 @@ export function BatchAnimation({
       }}
     >
       <div className="section-title">
-        <h2 id="batch-title">여러 방향 모션 생성</h2>
+        <h2 id="batch-title">
+          {directional ? "여러 방향·동작 생성" : "여러 동작 생성"}
+        </h2>
         <button aria-label="일괄 생성 닫기" disabled={busy} onClick={onClose}>
           <X size={18} />
         </button>
       </div>
       <p className="hint">
-        방향과 장식이 올바른 기준 이미지를 지정한 뒤, 확인한 방향만 체크하세요.
-        선택한 이미지의 방향을 유지해 같은 동작을 만듭니다.
+        {directional
+          ? "방향과 장식이 올바른 기준 이미지를 지정한 뒤, 확인한 방향만 체크하세요."
+          : "선택한 기준 이미지의 방향과 캐릭터를 유지하며 동작별로 생성합니다."}
+        각 동작의 설명과 재생 설정을 입력하세요.
       </p>
       <form
         onSubmit={(e) => {
@@ -91,84 +123,69 @@ export function BatchAnimation({
         }}
       >
         <fieldset disabled={busy}>
-          <legend>방향 기준과 동작 설정</legend>
-          <div className="batch-anchors">
-            {Object.entries(directionLabels).map(([direction, label]) => {
-              const asset = assets.find((a) => a.id === mapping[direction]);
-              return (
-                <div className="batch-anchor" key={direction}>
-                  <div className="checker">
-                    {asset ? (
-                      <img src={asset.url} alt={`${label} 기준 미리보기`} />
-                    ) : (
-                      <span>미지정</span>
-                    )}
-                  </div>
-                  <label className="check-field">
-                    <input
-                      type="checkbox"
-                      disabled={!asset}
-                      checked={reviewed.includes(direction)}
-                      onChange={(e) =>
+          <legend>기준 이미지와 동작 설정</legend>
+          {directional ? (
+            <div className="batch-anchors">
+              {Object.entries(directionLabels).map(([direction, label]) => {
+                const asset = assets.find((a) => a.id === mapping[direction]);
+                return (
+                  <div className="batch-anchor" key={direction}>
+                    <div className="checker">
+                      {asset ? (
+                        <img src={asset.url} alt={`${label} 기준 미리보기`} />
+                      ) : (
+                        <span>미지정</span>
+                      )}
+                    </div>
+                    <label className="check-field">
+                      <input
+                        type="checkbox"
+                        disabled={!asset}
+                        checked={reviewed.includes(direction)}
+                        onChange={(e) =>
+                          setReviewed((prev) =>
+                            e.target.checked
+                              ? [...prev, direction]
+                              : prev.filter((d) => d !== direction),
+                          )
+                        }
+                      />
+                      {label} 확인
+                    </label>
+                    <select
+                      aria-label={`${label} 기준 자산`}
+                      value={mapping[direction] || ""}
+                      onChange={(e) => {
+                        setMapping((prev) => ({
+                          ...prev,
+                          [direction]: e.target.value,
+                        }));
                         setReviewed((prev) =>
-                          e.target.checked
-                            ? [...prev, direction]
-                            : prev.filter((d) => d !== direction),
-                        )
-                      }
-                    />
-                    {label} 확인
-                  </label>
-                  <select
-                    aria-label={`${label} 기준 자산`}
-                    value={mapping[direction] || ""}
-                    onChange={(e) => {
-                      setMapping((prev) => ({
-                        ...prev,
-                        [direction]: e.target.value,
-                      }));
-                      setReviewed((prev) =>
-                        prev.filter((d) => d !== direction),
-                      );
-                    }}
-                  >
-                    <option value="">기준 자산 선택</option>
-                    {assets.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name} · {a.width}×{a.height}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              );
-            })}
-          </div>
-          <label className="field">
-            동작 설명
-            <textarea
-              aria-label="일괄 생성 프롬프트"
-              required
-              maxLength={4000}
-              value={settings.prompt}
-              onChange={(e) =>
-                setSettings({ ...settings, prompt: e.target.value })
-              }
-            />
-          </label>
+                          prev.filter((d) => d !== direction),
+                        );
+                      }}
+                    >
+                      <option value="">기준 자산 선택</option>
+                      {assets.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name} · {a.width}×{a.height}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="batch-reference checker">
+              {reference && (
+                <img src={reference.url} alt="여러 동작 기준 미리보기" />
+              )}
+              <span>{reference?.name ?? "기준 자산을 찾을 수 없습니다."}</span>
+            </div>
+          )}
+          <AnimationMotions motions={motions} onChange={setMotions} />
           <div className="batch-settings">
-            <label className="field">
-              동작 상태
-              <select
-                value={settings.state}
-                onChange={(e) =>
-                  setSettings({ ...settings, state: e.target.value })
-                }
-              >
-                {["idle", "walk", "run", "attack", "jump"].map((s) => (
-                  <option key={s}>{s}</option>
-                ))}
-              </select>
-            </label>
             <label className="field">
               목표 크기
               <select
@@ -184,45 +201,7 @@ export function BatchAnimation({
                 ))}
               </select>
             </label>
-            <label className="field">
-              프레임 수
-              <input
-                aria-label="일괄 생성 프레임 수"
-                type="number"
-                required
-                min={2}
-                max={16}
-                value={settings.frames}
-                onChange={(e) =>
-                  setSettings({ ...settings, frames: Number(e.target.value) })
-                }
-              />
-            </label>
-            <label className="field">
-              FPS
-              <input
-                aria-label="일괄 생성 FPS"
-                type="number"
-                required
-                min={1}
-                max={60}
-                value={settings.fps}
-                onChange={(e) =>
-                  setSettings({ ...settings, fps: Number(e.target.value) })
-                }
-              />
-            </label>
           </div>
-          <label className="check-field">
-            <input
-              type="checkbox"
-              checked={settings.loop}
-              onChange={(e) =>
-                setSettings({ ...settings, loop: e.target.checked })
-              }
-            />
-            반복 애니메이션 생성
-          </label>
           <label className="check-field">
             <input
               type="checkbox"
@@ -234,9 +213,11 @@ export function BatchAnimation({
             GPT 이미지 생성 이용 권한을 확인했습니다
           </label>
           <p className="hint">
-            {selected.length}개 방향 · 방향마다 생성 요청과 계정 사용량이
-            발생합니다. 순서대로 처리하며 각 작업은 최대 20분입니다. 결과와
-            취소는 작업 내역에서 방향별로 확인하세요.
+            {directional ? `${selected.length}개 방향` : "기준 이미지 1개"} ×{" "}
+            {motions.length}개 동작 = {jobCount}개 생성 요청. 각 요청에 계정
+            사용량이 발생합니다. 동작 설명·기준·이용 권한을 모두 확인해야 시작할
+            수 있습니다. 최대 40개 작업을 한 개씩 처리하며 각 작업은 최대
+            20분입니다. 작업 내역에서 개별 결과와 취소를 확인하세요.
           </p>
           {error && (
             <p role="alert" className="notice">
@@ -248,7 +229,7 @@ export function BatchAnimation({
             type="submit"
             disabled={!valid || busy}
           >
-            {busy ? "작업 등록 중…" : `${selected.length}개 방향 생성 시작`}
+            {busy ? "작업 등록 중…" : `${jobCount}개 작업 생성 시작`}
           </button>
         </fieldset>
       </form>
